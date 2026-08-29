@@ -1,0 +1,57 @@
+# ---- Environments / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+next-env.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+coverage/
+
+# ---- Data / local service volumes ----
+/data/
+docker/volumes/
+minio-data/
+qdrant-storage/
+postgres-data/
+*.sqlite3
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---- WSL / Windows download artifacts ----
+*:Zone.Identifier
+*Zone.Identifier
