@@ -1,0 +1,17 @@
+.app-container {
+    @apply flex h-screen bg-gray-50;
+}
+
+.app-content {
+    @apply flex-1 flex flex-col md:ml-64;
+}
+
+.app-main {
+    @apply flex-1 overflow-auto p-6;
+}
+
+@media (max-width: 768px) {
+    .app-main {
+        @apply pt-16;
+    }
+}
