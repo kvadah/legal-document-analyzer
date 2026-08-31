@@ -1,12 +1,27 @@
 'use client'
 
-import { Search, User, LogOut } from 'lucide-react'
+import { Search, LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/context/AuthContext'
+
+const ROLE_LABELS: Record<string, string> = {
+    admin: 'Admin',
+    reviewer: 'Reviewer',
+    viewer: 'Viewer',
+}
 
 export default function TopBar() {
+    const { user, logout } = useAuth()
+    const router = useRouter()
     const [showUserMenu, setShowUserMenu] = useState(false)
 
-    // TODO: Get current user from auth context
+    async function handleLogout() {
+        await logout()
+        router.push('/login')
+    }
+
+    const initials = user?.email?.slice(0, 2).toUpperCase() ?? '?' 
 
     return (
         <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
@@ -17,7 +32,7 @@ export default function TopBar() {
                         <Search className="absolute left-3 top-3 text-gray-400" size={20} />
                         <input
                             type="text"
-                            placeholder="Search documents... (Cmd+K)"
+                            placeholder="Search documents… (Cmd+K)"
                             className="w-full pl-10 pr-4 py-2 rounded-lg bg-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
@@ -25,28 +40,36 @@ export default function TopBar() {
 
                 {/* Right side controls */}
                 <div className="flex items-center gap-4 ml-4">
-                    {/* User menu */}
                     <div className="relative">
                         <button
+                            id="topbar-user-menu-btn"
                             onClick={() => setShowUserMenu(!showUserMenu)}
                             className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
                         >
                             <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">
-                                U
+                                {initials}
                             </div>
-                            <span className="text-sm font-medium">User</span>
+                            <div className="text-left hidden sm:block">
+                                <p className="text-sm font-medium leading-tight">{user?.email ?? ''}</p>
+                                <p className="text-xs text-gray-500 leading-tight">
+                                    {ROLE_LABELS[user?.role ?? ''] ?? user?.role}
+                                </p>
+                            </div>
                         </button>
 
-                        {/* Dropdown menu */}
                         {showUserMenu && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50">
                                 <div className="px-4 py-3 border-b border-gray-200">
-                                    <p className="text-sm font-medium">User Name</p>
-                                    <p className="text-xs text-gray-500">user@example.com</p>
+                                    <p className="text-sm font-medium truncate">{user?.email}</p>
+                                    <p className="text-xs text-gray-500">{user?.orgName}</p>
                                 </div>
-                                <button className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <button
+                                    id="topbar-logout-btn"
+                                    onClick={handleLogout}
+                                    className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                                >
                                     <LogOut size={16} />
-                                    Logout
+                                    Sign out
                                 </button>
                             </div>
                         )}

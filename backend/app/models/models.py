@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     BigInteger,
     DateTime,
     Enum,
@@ -67,6 +68,7 @@ class User(BaseModel):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole), default=UserRole.REVIEWER, nullable=False
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -157,6 +159,7 @@ class Document(BaseModel):
     )
     page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    file_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
     __table_args__ = (
         Index("ix_documents_organization_id", "organization_id"),

@@ -35,6 +35,7 @@ dependencies = [
   # --- Vector DB & object storage ---
   "qdrant-client>=1.11",
   "aioboto3>=13.1",                 # async S3 / MinIO client (pulls boto3/botocore)
+  "pypdf>=5.0",                     # PDF text extraction for ingestion
 
   # --- LLM providers (behind the LLMProvider abstraction) ---
   "anthropic>=0.34",
@@ -59,6 +60,8 @@ processing = [
   "unstructured>=0.15",             # parsing fallback
   "sentence-transformers>=3.0",     # BGE-large embeddings + BGE reranker (cross-encoder)
   "pypdf>=5.0",                     # text-layer detection / native PDF text extraction
+  "pdf2image>=1.17",
+  "pytesseract>=0.3.13",            # Tesseract fallback
 ]
 
 dev = [
@@ -69,6 +72,8 @@ dev = [
   "mypy>=1.11",
   "faker>=28.0",                    # seed/dev data
   "types-passlib",
+  "aiosqlite>=0.20",
+  "fakeredis>=2.26",
 ]
 
 [build-system]

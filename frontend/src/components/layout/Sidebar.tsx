@@ -12,6 +12,7 @@ import {
     Menu,
     X,
 } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
 
 const NAV_ITEMS = [
     { href: '/contracts', label: 'Contracts', icon: FileText },
@@ -24,14 +25,14 @@ const NAV_ITEMS = [
 export default function Sidebar() {
     const [isOpen, setIsOpen] = useState(true)
     const pathname = usePathname()
-
-    // TODO: Get user role from auth context
-    const isAdmin = false
+    const { user } = useAuth()
+    const isAdmin = user?.role === 'admin'
 
     return (
         <>
             {/* Mobile toggle */}
             <button
+                id="sidebar-toggle-btn"
                 onClick={() => setIsOpen(!isOpen)}
                 className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
             >
@@ -47,7 +48,9 @@ export default function Sidebar() {
                     {/* Logo/Brand */}
                     <div className="p-6 border-b border-gray-800">
                         <h1 className="text-xl font-bold">Legal Doc AI</h1>
-                        <p className="text-xs text-gray-400 mt-1">Contract Analysis</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                            {user?.orgName ?? 'Contract Analysis'}
+                        </p>
                     </div>
 
                     {/* Navigation Items */}
@@ -63,8 +66,8 @@ export default function Sidebar() {
                                     <Link
                                         href={item.href}
                                         className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
-                                                ? 'bg-blue-600 text-white'
-                                                : 'text-gray-300 hover:bg-gray-800'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'text-gray-300 hover:bg-gray-800'
                                             }`}
                                     >
                                         <Icon size={20} />

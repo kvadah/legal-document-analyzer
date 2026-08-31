@@ -1,14 +1,11 @@
 """Arq worker job definitions."""
 from arq.connections import RedisSettings
 
-from app.core.config import settings
+from app.workers.pool import _redis_settings, process_ingestion
 
 
 class WorkerSettings:
     """Arq worker configuration."""
 
-    redis_settings = RedisSettings(host="redis", port=6379, database=0)
-    functions = []  # Jobs will be registered here
-
-
-# Placeholder for future job definitions
+    redis_settings = _redis_settings()
+    functions = [process_ingestion]

@@ -94,8 +94,9 @@ services:
       JWT_SECRET_KEY: your-super-secret-key-change-in-production
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      LOG_LEVEL: INFO
-      DEBUG: "False"
+      MOCK_EMBEDDINGS: "true"
+      RUN_INGESTION_INLINE: "false"
+      STORAGE_BACKEND: s3
     ports:
       - "8000:8000"
     depends_on:
@@ -136,6 +137,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LOG_LEVEL: INFO
+      MOCK_EMBEDDINGS: "true"
+      RUN_INGESTION_INLINE: "false"
+      STORAGE_BACKEND: s3
     depends_on:
       postgres:
         condition: service_healthy

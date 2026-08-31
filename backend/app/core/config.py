@@ -55,6 +55,23 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     sentry_dsn: Optional[str] = None
 
+    # --- Upload / ingestion ---
+    max_upload_mb: int = 50
+    storage_backend: str = "s3"  # "s3" or "local"
+    local_storage_path: str = "/tmp/legal-doc-storage"
+    run_ingestion_inline: bool = False
+    mock_embeddings: bool = True
+    embedding_model_name: str = "BAAI/bge-large-en-v1.5"
+    chunk_target_tokens: int = 400
+    chunk_max_tokens: int = 800
+    chunk_overlap_ratio: float = 0.1
+    ocr_skip_min_chars_per_page: int = 50
+    ocr_low_confidence_threshold: float = 0.7
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
+
     class Config:
         env_file = ".env"
         case_sensitive = False
