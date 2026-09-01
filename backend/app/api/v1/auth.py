@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, get_current_user, require_role
+from app.core.deps import CurrentUser, require_role
 from app.db.session import get_session
 from app.schemas.auth import (
     AcceptInviteRequest,
@@ -90,9 +90,10 @@ async def refresh(
 
     # Build a minimal AuthResponse (full user info would require another DB lookup;
     # the frontend should use the access token claims for user info)
-    from app.schemas.auth import AuthUserOut
     import jwt as _jwt
+
     from app.core.config import settings as _s
+    from app.schemas.auth import AuthUserOut
     claims = _jwt.decode(new_access, _s.jwt_secret_key, algorithms=[_s.jwt_algorithm])
     return AuthResponse(
         access_token=new_access,

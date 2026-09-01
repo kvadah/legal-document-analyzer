@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import urlparse
 
 import aioboto3
 from botocore.exceptions import ClientError

@@ -14,7 +14,7 @@ class ParsedNode:
     page_number: int
     paragraph_index: int
     heading_level: int | None = None
-    children: list["ParsedNode"] = field(default_factory=list)
+    children: list[ParsedNode] = field(default_factory=list)
 
 
 @dataclass

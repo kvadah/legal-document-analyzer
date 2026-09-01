@@ -11,12 +11,9 @@ RUN apt-get update && apt-get install -y \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (including processing extras)
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[processing]"
-
-# Copy application code
+# Copy application code and install dependencies (including processing extras)
 COPY . .
+RUN pip install --no-cache-dir ".[processing]"
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

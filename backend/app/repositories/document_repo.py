@@ -3,7 +3,6 @@ import uuid
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Document, DocumentStatus
 from app.repositories.base import BaseRepository

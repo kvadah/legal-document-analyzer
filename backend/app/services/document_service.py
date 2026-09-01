@@ -176,7 +176,6 @@ async def list_documents(
     status_filter: str | None = None,
     search: str | None = None,
 ) -> tuple[list[DocumentOut], int]:
-    from sqlalchemy import func
 
     repo = DocumentRepository(session, UUID(current_user.org_id))
     filters = []

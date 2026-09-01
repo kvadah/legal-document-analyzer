@@ -1,7 +1,7 @@
 """Phase 2 document upload and ingestion tests."""
 import pytest
-
 from app.models.models import DocumentStatus
+
 from tests.conftest import register_user
 
 
@@ -16,10 +16,10 @@ async def test_upload_and_ingest_text_document(client, monkeypatch):
     token = reg.json()["access_token"]
 
     content = (
-        "MASTER SERVICES AGREEMENT\n\n"
-        "This Agreement is entered into between Acme Corp and Beta LLC.\n\n"
-        "Confidentiality. Each party shall keep information confidential.\n"
-    ).encode("utf-8")
+        b"MASTER SERVICES AGREEMENT\n\n"
+        b"This Agreement is entered into between Acme Corp and Beta LLC.\n\n"
+        b"Confidentiality. Each party shall keep information confidential.\n"
+    )
 
     resp = await client.post(
         "/api/v1/documents/upload",
@@ -74,7 +74,7 @@ async def test_duplicate_upload_surfaces_warning(client, monkeypatch):
 
     monkeypatch.setattr("app.pipelines.ingestion.pipeline._upsert_qdrant_points", _noop)
 
-    reg = await register_user(client, email="dup@example.com")
+    reg = await register_user(client, email="dupdoc@example.com", org_name="Dup Org")
     token = reg.json()["access_token"]
     files = [("files", ("same.txt", b"duplicate content", "text/plain"))]
 

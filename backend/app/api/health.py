@@ -1,5 +1,4 @@
 """Health check endpoints."""
-from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -15,8 +14,8 @@ class HealthResponse(BaseModel):
 
     status: str
     service: str
-    database: Optional[str] = None
-    details: Optional[dict] = None
+    database: str | None = None
+    details: dict | None = None
 
 
 @router.get("/live", response_model=HealthResponse)

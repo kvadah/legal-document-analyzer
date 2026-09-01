@@ -6,9 +6,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
+    create_access_token,
     generate_invite_token,
     generate_refresh_token,
-    create_access_token,
     hash_password,
     verify_password,
 )
@@ -155,6 +155,7 @@ async def refresh_tokens(
         )
 
     from sqlalchemy import select
+
     from app.models.models import User as UserModel
     stmt = select(UserModel).where(UserModel.id == uuid.UUID(user_id))
     result = await session.execute(stmt)

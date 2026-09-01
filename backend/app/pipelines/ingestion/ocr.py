@@ -131,8 +131,8 @@ def _extract_pdf(file_bytes: bytes) -> OCRResult:
 
 def _run_tesseract_on_pdf(file_bytes: bytes, page_count: int) -> OCRResult:
     try:
-        from pdf2image import convert_from_bytes
         import pytesseract
+        from pdf2image import convert_from_bytes
     except ImportError as exc:
         raise ValueError(
             "Scanned PDF requires OCR dependencies (pdf2image, pytesseract, poppler, tesseract)"

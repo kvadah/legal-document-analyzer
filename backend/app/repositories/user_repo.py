@@ -2,9 +2,7 @@
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.base import BaseModel as _Base
 from app.models.models import User, UserRole
 from app.repositories.base import BaseRepository
 

@@ -1,5 +1,4 @@
 """Application configuration using Pydantic Settings."""
-from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -29,7 +28,7 @@ class Settings(BaseSettings):
     jwt_expiration_hours: int = 24
 
     # --- S3 / Object Storage ---
-    s3_endpoint_url: Optional[str] = "http://localhost:9000"  # MinIO for dev
+    s3_endpoint_url: str | None = "http://localhost:9000"  # MinIO for dev
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
     s3_bucket_name: str = "legal-doc-analyzer"
@@ -41,11 +40,11 @@ class Settings(BaseSettings):
 
     # --- LLM Providers ---
     # Claude (Anthropic)
-    anthropic_api_key: Optional[str] = None
+    anthropic_api_key: str | None = None
     anthropic_model: str = "claude-3-5-sonnet-20241022"
 
     # OpenAI
-    openai_api_key: Optional[str] = None
+    openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
 
     # Default provider
@@ -53,7 +52,7 @@ class Settings(BaseSettings):
 
     # --- Logging & Observability ---
     log_level: str = "INFO"
-    sentry_dsn: Optional[str] = None
+    sentry_dsn: str | None = None
 
     # --- Upload / ingestion ---
     max_upload_mb: int = 50

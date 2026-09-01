@@ -1,26 +1,32 @@
 """Password hashing and JWT utilities."""
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+BCRYPT_ROUNDS = 12
+BCRYPT_MAX_PASSWORD_BYTES = 72
 
 # ── Password ──────────────────────────────────────────────────────────────────
 
 
 def hash_password(plain: str) -> str:
     """Return a bcrypt hash of the plain-text password."""
-    return pwd_context.hash(plain)
+    password_bytes = plain.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     """Return True if *plain* matches *hashed*."""
-    return pwd_context.verify(plain, hashed)
+    password_bytes = plain.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+    try:
+        return bcrypt.checkpw(password_bytes, hashed.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
@@ -35,7 +41,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     """Create a signed HS256 JWT access token."""
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload: dict[str, Any] = {
@@ -43,7 +49,7 @@ def create_access_token(
         "org_id": org_id,
         "role": role,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
     }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 

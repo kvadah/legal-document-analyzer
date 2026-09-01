@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -27,7 +27,7 @@ async def publish_document_status(
         "document_id": str(document_id),
         "status": status.value if isinstance(status, DocumentStatus) else status,
         "status_detail": status_detail,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     redis = await get_redis()
     await redis.publish(status_channel(document_id), json.dumps(payload))

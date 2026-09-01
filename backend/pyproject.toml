@@ -15,7 +15,7 @@ dependencies = [
   "sse-starlette>=2.1",             # SSE: pipeline status + RAG streaming
 
   # --- Config & validation ---
-  "pydantic>=2.9",
+  "pydantic[email]>=2.9",
   "pydantic-settings>=2.5",
 
   # --- Database (async SQLAlchemy + Postgres) ---
@@ -29,8 +29,8 @@ dependencies = [
 
   # --- Auth & security ---
   "pyjwt>=2.9",
-  "passlib[bcrypt]>=1.7.4",         # password hashing (bcrypt; argon2 is an alt)
-  "python-magic>=0.4.27",           # MIME sniffing for upload validation (needs libmagic)
+  "bcrypt>=4.0",                     # password hashing
+  "python-magic>=0.4.27",            # MIME sniffing for upload validation (needs libmagic)
 
   # --- Vector DB & object storage ---
   "qdrant-client>=1.11",
@@ -71,7 +71,6 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "faker>=28.0",                    # seed/dev data
-  "types-passlib",
   "aiosqlite>=0.20",
   "fakeredis>=2.26",
 ]

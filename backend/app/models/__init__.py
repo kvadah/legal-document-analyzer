@@ -1,19 +1,19 @@
 """Initialization for models package."""
 from app.models.models import (
-    Organization,
-    User,
-    Document,
-    DocumentVersion,
+    Annotation,
     Chunk,
     Clause,
-    Risk,
+    Comment,
+    Comparison,
+    Document,
+    DocumentSummary,
+    DocumentVersion,
     Entity,
     Obligation,
-    DocumentSummary,
-    Comment,
-    Annotation,
-    Comparison,
+    Organization,
     Report,
+    Risk,
+    User,
 )
 
 __all__ = [

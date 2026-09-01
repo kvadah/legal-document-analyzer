@@ -1,6 +1,5 @@
 """Pydantic schemas for document endpoints."""
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -14,11 +13,11 @@ class DocumentOut(BaseModel):
     file_size_bytes: int
     document_type: str
     status: str
-    status_detail: Optional[str] = None
-    page_count: Optional[int] = None
-    language: Optional[str] = None
-    file_hash: Optional[str] = None
-    possible_duplicate_of: Optional[str] = None
+    status_detail: str | None = None
+    page_count: int | None = None
+    language: str | None = None
+    file_hash: str | None = None
+    possible_duplicate_of: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -36,7 +35,7 @@ class UploadDocumentResult(BaseModel):
     document_id: str
     filename: str
     status: str
-    possible_duplicate_of: Optional[str] = None
+    possible_duplicate_of: str | None = None
 
 
 class UploadResponse(BaseModel):
@@ -46,5 +45,5 @@ class UploadResponse(BaseModel):
 class DocumentStatusEvent(BaseModel):
     document_id: str
     status: str
-    status_detail: Optional[str] = None
+    status_detail: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)

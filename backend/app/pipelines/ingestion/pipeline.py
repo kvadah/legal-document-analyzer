@@ -9,7 +9,7 @@ from uuid import UUID
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
@@ -19,7 +19,7 @@ from app.pipelines.ingestion.metadata import extract_metadata
 from app.pipelines.ingestion.ocr import run_ocr
 from app.pipelines.ingestion.parser import flatten_paragraphs, parse_document
 from app.pipelines.status import transition_document_status
-from app.providers.embeddings import VECTOR_SIZE, get_embedding_provider
+from app.providers.embeddings import get_embedding_provider
 from app.repositories.chunk_repo import ChunkRepository
 from app.repositories.document_repo import DocumentRepository
 from app.services.storage_service import build_document_storage_key, get_storage

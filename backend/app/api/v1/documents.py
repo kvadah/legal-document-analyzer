@@ -12,6 +12,9 @@ from sse_starlette.sse import EventSourceResponse
 from app.core.deps import CurrentUser, get_current_user
 from app.db.redis import get_redis
 from app.db.session import get_session
+from app.pipelines.status import status_channel
+from app.repositories.document_repo import DocumentRepository
+from app.schemas.document import DocumentListResponse, DocumentOut, UploadResponse
 from app.services import document_service
 from app.workers.pool import enqueue_ingestion
 

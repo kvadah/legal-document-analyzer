@@ -1,22 +1,20 @@
 """Shared pytest fixtures."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import fakeredis.aioredis
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_session
 from app.main import app
 from app.providers.embeddings import MockEmbeddingProvider, reset_embedding_provider
 from app.services.storage_service import LocalStorageService, reset_storage
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -39,6 +37,11 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     reset_storage(LocalStorageService(settings.local_storage_path))
     reset_embedding_provider(MockEmbeddingProvider())
     yield
+
+
+@pytest.fixture(autouse=True)
+def pipeline_test_session(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("app.pipelines.ingestion.pipeline.AsyncSessionLocal", TestSessionLocal)
 
 
 @pytest.fixture(autouse=True)

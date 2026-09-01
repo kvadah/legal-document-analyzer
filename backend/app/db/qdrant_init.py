@@ -1,8 +1,7 @@
 """Qdrant vector database initialization."""
-from typing import Optional
 
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, PointStruct, VectorParams
+from qdrant_client.http.models import Distance, VectorParams
 
 from app.core.config import settings
 

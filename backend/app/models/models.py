@@ -2,12 +2,13 @@
 import enum
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy import (
+    ARRAY,
     JSON,
-    Boolean,
     BigInteger,
+    Boolean,
     DateTime,
     Enum,
     ForeignKey,
@@ -17,8 +18,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    func,
-    ARRAY,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -33,16 +32,16 @@ class Organization(BaseModel):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     plan: Mapped[str] = mapped_column(String(50), default="free", nullable=False)
-    settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
-    users: Mapped[List["User"]] = relationship(
+    users: Mapped[list["User"]] = relationship(
         "User", back_populates="organization", cascade="all, delete-orphan"
     )
-    documents: Mapped[List["Document"]] = relationship(
+    documents: Mapped[list["Document"]] = relationship(
         "Document", back_populates="organization", cascade="all, delete-orphan"
     )
-    reports: Mapped[List["Report"]] = relationship(
+    reports: Mapped[list["Report"]] = relationship(
         "Report", back_populates="organization", cascade="all, delete-orphan"
     )
 
@@ -64,13 +63,13 @@ class User(BaseModel):
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole), default=UserRole.REVIEWER, nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
@@ -83,13 +82,13 @@ class User(BaseModel):
     organization: Mapped[Organization] = relationship(
         "Organization", back_populates="users"
     )
-    comments: Mapped[List["Comment"]] = relationship(
+    comments: Mapped[list["Comment"]] = relationship(
         "Comment", back_populates="user", cascade="all, delete-orphan"
     )
-    annotations: Mapped[List["Annotation"]] = relationship(
+    annotations: Mapped[list["Annotation"]] = relationship(
         "Annotation", back_populates="user", cascade="all, delete-orphan"
     )
-    uploaded_documents: Mapped[List["Document"]] = relationship(
+    uploaded_documents: Mapped[list["Document"]] = relationship(
         "Document", foreign_keys="Document.uploaded_by", back_populates="uploader"
     )
 
@@ -140,7 +139,7 @@ class Document(BaseModel):
     file_type: Mapped[str] = mapped_column(String(50), nullable=False)
     file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    ocr_text_storage_path: Mapped[Optional[str]] = mapped_column(
+    ocr_text_storage_path: Mapped[str | None] = mapped_column(
         String(512), nullable=True
     )
     document_type: Mapped[DocumentType] = mapped_column(
@@ -149,17 +148,17 @@ class Document(BaseModel):
     status: Mapped[DocumentStatus] = mapped_column(
         Enum(DocumentStatus), default=DocumentStatus.UPLOADED, nullable=False
     )
-    status_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    contract_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 1), nullable=True)
-    ai_confidence_score: Mapped[Optional[float]] = mapped_column(
+    status_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contract_score: Mapped[float | None] = mapped_column(Numeric(3, 1), nullable=True)
+    ai_confidence_score: Mapped[float | None] = mapped_column(
         Numeric(3, 2), nullable=True
     )
-    parent_document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    parent_document_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True
     )
-    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    file_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    language: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     __table_args__ = (
         Index("ix_documents_organization_id", "organization_id"),
@@ -175,31 +174,31 @@ class Document(BaseModel):
     uploader: Mapped[User] = relationship(
         "User", foreign_keys=[uploaded_by], back_populates="uploaded_documents"
     )
-    versions: Mapped[List["DocumentVersion"]] = relationship(
+    versions: Mapped[list["DocumentVersion"]] = relationship(
         "DocumentVersion", back_populates="document", cascade="all, delete-orphan"
     )
-    chunks: Mapped[List["Chunk"]] = relationship(
+    chunks: Mapped[list["Chunk"]] = relationship(
         "Chunk", back_populates="document", cascade="all, delete-orphan"
     )
-    clauses: Mapped[List["Clause"]] = relationship(
+    clauses: Mapped[list["Clause"]] = relationship(
         "Clause", back_populates="document", cascade="all, delete-orphan"
     )
-    risks: Mapped[List["Risk"]] = relationship(
+    risks: Mapped[list["Risk"]] = relationship(
         "Risk", back_populates="document", cascade="all, delete-orphan"
     )
-    entities: Mapped[List["Entity"]] = relationship(
+    entities: Mapped[list["Entity"]] = relationship(
         "Entity", back_populates="document", cascade="all, delete-orphan"
     )
-    obligations: Mapped[List["Obligation"]] = relationship(
+    obligations: Mapped[list["Obligation"]] = relationship(
         "Obligation", back_populates="document", cascade="all, delete-orphan"
     )
     summary: Mapped[Optional["DocumentSummary"]] = relationship(
         "DocumentSummary", back_populates="document", uselist=False, cascade="all, delete-orphan"
     )
-    comments: Mapped[List["Comment"]] = relationship(
+    comments: Mapped[list["Comment"]] = relationship(
         "Comment", back_populates="document", cascade="all, delete-orphan"
     )
-    annotations: Mapped[List["Annotation"]] = relationship(
+    annotations: Mapped[list["Annotation"]] = relationship(
         "Annotation", back_populates="document", cascade="all, delete-orphan"
     )
 
@@ -217,7 +216,7 @@ class DocumentVersion(BaseModel):
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
-    change_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    change_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_document_versions_document_id", "document_id"),
@@ -239,9 +238,9 @@ class Chunk(BaseModel):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    paragraph_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    section_heading: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    embedding_vector_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section_heading: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding_vector_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
     __table_args__ = (
@@ -278,11 +277,13 @@ class Clause(BaseModel):
     )
     clause_type: Mapped[ClauseType] = mapped_column(Enum(ClauseType), nullable=False)
     extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    paragraph_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
-    source_chunk_ids: Mapped[Optional[list]] = mapped_column(ARRAY(UUID(as_uuid=True)), nullable=True)
+    paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confidence_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    source_chunk_ids: Mapped[list | None] = mapped_column(
+        ARRAY(UUID(as_uuid=True)).with_variant(JSON, "sqlite"), nullable=True
+    )
 
     __table_args__ = (
         Index("ix_clauses_document_id", "document_id"),
@@ -291,7 +292,7 @@ class Clause(BaseModel):
 
     # Relationships
     document: Mapped[Document] = relationship("Document", back_populates="clauses")
-    risks: Mapped[List["Risk"]] = relationship(
+    risks: Mapped[list["Risk"]] = relationship(
         "Risk", back_populates="clause", cascade="all, delete-orphan"
     )
 
@@ -334,15 +335,15 @@ class Risk(BaseModel):
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False
     )
-    clause_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    clause_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clauses.id"), nullable=True
     )
     risk_type: Mapped[RiskType] = mapped_column(Enum(RiskType), nullable=False)
     severity: Mapped[RiskSeverity] = mapped_column(Enum(RiskSeverity), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    recommendation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
+    recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confidence_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     status: Mapped[RiskStatus] = mapped_column(
         Enum(RiskStatus), default=RiskStatus.FLAGGED, nullable=False
     )
@@ -355,7 +356,7 @@ class Risk(BaseModel):
 
     # Relationships
     document: Mapped[Document] = relationship("Document", back_populates="risks")
-    clause: Mapped[Optional[Clause]] = relationship("Clause", back_populates="risks")
+    clause: Mapped[Clause | None] = relationship("Clause", back_populates="risks")
 
 
 class EntityType(str, enum.Enum):
@@ -381,7 +382,7 @@ class Entity(BaseModel):
     value: Mapped[str] = mapped_column(String(512), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    confidence_score: Mapped[Optional[float]] = mapped_column(Numeric(3, 2), nullable=True)
+    confidence_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
 
     __table_args__ = (
         Index("ix_entities_document_id", "document_id"),
@@ -422,12 +423,12 @@ class Obligation(BaseModel):
     )
     obligated_party: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    deadline_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deadline_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     deadline_type: Mapped[DeadlineType] = mapped_column(
         Enum(DeadlineType), nullable=False
     )
-    penalty_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    source_clause_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    penalty_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_clause_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clauses.id"), nullable=True
     )
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -452,12 +453,12 @@ class DocumentSummary(BaseModel):
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), unique=True, nullable=False
     )
-    parties: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    duration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    termination_conditions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    key_risks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    financial_terms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    parties: Mapped[str | None] = mapped_column(Text, nullable=True)
+    purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    termination_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_risks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    financial_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("ix_document_summaries_document_id", "document_id"),)
 
@@ -477,8 +478,8 @@ class Comment(BaseModel):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    paragraph_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_comments_document_id", "document_id"),
@@ -504,9 +505,9 @@ class Annotation(BaseModel):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     annotation_type: Mapped[str] = mapped_column(String(50), nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    paragraph_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    start_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    end_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    start_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         Index("ix_annotations_document_id", "document_id"),
@@ -530,7 +531,7 @@ class Comparison(BaseModel):
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
-    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (
         Index("ix_comparisons_document_id_a", "document_id_a"),
@@ -548,8 +549,8 @@ class Report(BaseModel):
     )
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
-    data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    download_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    download_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     __table_args__ = (
         Index("ix_reports_organization_id", "organization_id"),
