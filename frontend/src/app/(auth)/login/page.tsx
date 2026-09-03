@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
 export default function LoginPage() {
@@ -11,6 +12,7 @@ export default function LoginPage() {
 
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [showPassword, setShowPassword] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
 
@@ -29,60 +31,107 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="auth-card">
-            <div className="auth-brand">
-                <h1>Legal Doc AI</h1>
-                <p>Contract analysis, powered by AI</p>
-            </div>
+        <div className="animate-fade-up">
+            <h1 className="font-display text-[30px] font-semibold tracking-tight text-ink-900">
+                Welcome back
+            </h1>
+            <p className="mt-2 text-[14.5px] text-ink-500">
+                Sign in to your contract workspace.
+            </p>
 
-            <form onSubmit={handleSubmit} className="auth-form">
-                <h2>Sign in</h2>
-
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
                 {error && (
-                    <div className="auth-error" role="alert">
+                    <div
+                        className="animate-scale-in flex items-start gap-2.5 rounded-xl border border-rose-200/80 bg-rose-50 px-4 py-3 text-[13.5px] text-rose-700"
+                        role="alert"
+                    >
+                        <AlertCircle size={16} className="mt-0.5 shrink-0" />
                         {error}
                     </div>
                 )}
 
-                <div className="form-group">
-                    <label htmlFor="email">Email address</label>
-                    <input
-                        id="email"
-                        type="email"
-                        autoComplete="email"
-                        required
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        placeholder="you@example.com"
-                    />
+                <div>
+                    <label htmlFor="email" className="field-label">
+                        Email address
+                    </label>
+                    <div className="relative">
+                        <Mail
+                            size={16}
+                            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-300"
+                        />
+                        <input
+                            id="email"
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder="you@example.com"
+                            className="field pl-10"
+                        />
+                    </div>
                 </div>
 
-                <div className="form-group">
-                    <label htmlFor="password">Password</label>
-                    <input
-                        id="password"
-                        type="password"
-                        autoComplete="current-password"
-                        required
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                    />
+                <div>
+                    <div className="flex items-center justify-between">
+                        <label htmlFor="password" className="field-label">
+                            Password
+                        </label>
+                    </div>
+                    <div className="relative">
+                        <Lock
+                            size={16}
+                            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-300"
+                        />
+                        <input
+                            id="password"
+                            type={showPassword ? 'text' : 'password'}
+                            autoComplete="current-password"
+                            required
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="Your password"
+                            className="field pl-10 pr-11"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-ink-300 transition-colors hover:bg-ink-100 hover:text-ink-500"
+                        >
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                    </div>
                 </div>
 
                 <button
                     type="submit"
-                    className="btn-primary btn-full"
+                    className="btn-primary w-full py-3 text-[14.5px]"
                     disabled={loading}
                 >
-                    {loading ? 'Signing in…' : 'Sign in'}
+                    {loading ? (
+                        <>
+                            <Loader2 size={17} className="animate-spin" />
+                            Signing in…
+                        </>
+                    ) : (
+                        <>
+                            Sign in
+                            <ArrowRight size={16} />
+                        </>
+                    )}
                 </button>
-
-                <p className="auth-alt-action">
-                    New organisation?{' '}
-                    <Link href="/register">Create an account</Link>
-                </p>
             </form>
+
+            <p className="mt-7 text-center text-[13.5px] text-ink-500">
+                New organisation?{' '}
+                <Link
+                    href="/register"
+                    className="font-semibold text-indigo-600 transition-colors hover:text-indigo-500 hover:underline"
+                >
+                    Create an account
+                </Link>
+            </p>
         </div>
     )
 }

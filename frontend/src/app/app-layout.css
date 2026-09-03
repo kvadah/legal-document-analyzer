@@ -1,38 +1,7 @@
-.app-container {
-    @apply flex h-screen bg-gray-50;
-}
-
 .app-content {
-    @apply flex-1 flex flex-col md:ml-64;
+    @apply flex min-h-screen flex-1 flex-col lg:pl-[264px];
 }
 
 .app-main {
-    @apply flex-1 overflow-auto p-6;
-}
-
-@media (max-width: 768px) {
-    .app-main {
-        @apply pt-16;
-    }
-}
-/* Auth guard loading state */
-.app-loading {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0f172a;
-}
-
-.app-loading-spinner {
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 3px solid rgba(255,255,255,0.1);
-  border-top-color: #3b82f6;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+    @apply flex-1 animate-fade-in p-6 lg:p-8;
 }
