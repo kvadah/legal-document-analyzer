@@ -175,8 +175,10 @@ async def _run_stages(session: AsyncSession, doc: Document) -> None:
     )
     await session.commit()
     from app.pipelines.status import publish_document_status
+    from app.workers.pool import enqueue_ai_pipeline
 
     await publish_document_status(doc_id, DocumentStatus.INGESTION_READY, status_detail=status_detail)
+    await enqueue_ai_pipeline(doc_id_str)
 
 
 async def _upsert_qdrant_points(points: list[PointStruct]) -> None:

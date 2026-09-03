@@ -1,10 +1,11 @@
-"""Arq worker pool helpers and ingestion job enqueue."""
+"""Arq worker pool helpers and pipeline job enqueueing."""
 from __future__ import annotations
 
 from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.core.config import settings
+from app.pipelines.ai.pipeline import run_ai_pipeline
 from app.pipelines.ingestion.pipeline import run_ingestion_pipeline
 
 _arq_pool = None
@@ -36,5 +37,17 @@ async def enqueue_ingestion(document_id: str) -> None:
     await pool.enqueue_job("process_ingestion", document_id)
 
 
+async def enqueue_ai_pipeline(document_id: str) -> None:
+    if settings.run_ai_pipeline_inline:
+        await run_ai_pipeline(document_id)
+        return
+    pool = await get_arq_pool()
+    await pool.enqueue_job("process_ai_pipeline", document_id)
+
+
 async def process_ingestion(ctx, document_id: str) -> None:  # noqa: ARG001
     await run_ingestion_pipeline(document_id)
+
+
+async def process_ai_pipeline(ctx, document_id: str) -> None:  # noqa: ARG001
+    await run_ai_pipeline(document_id)

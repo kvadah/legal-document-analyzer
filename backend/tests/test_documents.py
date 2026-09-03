@@ -36,7 +36,7 @@ async def test_upload_and_ingest_text_document(client, monkeypatch):
     )
     assert get_resp.status_code == 200
     doc = get_resp.json()
-    assert doc["status"] == DocumentStatus.INGESTION_READY.value
+    assert doc["status"] == DocumentStatus.ANALYSIS_READY.value
     assert doc["page_count"] == 1
     assert doc["filename"] == "agreement.txt"
 

@@ -10,7 +10,6 @@ dependencies = [
   # --- Web framework & server ---
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
-  "gunicorn>=22.0",
   "python-multipart>=0.0.9",        # multipart file uploads
   "sse-starlette>=2.1",             # SSE: pipeline status + RAG streaming
 
@@ -41,27 +40,18 @@ dependencies = [
   "anthropic>=0.34",
   "openai>=1.40",
 
-  # --- HTTP, resilience, observability ---
-  "httpx>=0.27",
+  # --- HTTP, resilience ---
+  "httpx>=0.27",                    # Gemini embeddings API + tests
   "tenacity>=9.0",                  # exponential backoff / retries
-  "structlog>=24.4",
-  "sentry-sdk[fastapi]>=2.13",
 ]
 
 [project.optional-dependencies]
-# Heavy document-processing stack. Required by the worker image; optional for
-# API-only or frontend-focused dev (see MOCK_LLM for a canned-response dev flow).
+# OCR fallback for scanned PDFs. Required by the worker image; optional for
+# API-only or frontend-focused dev (see MOCK_EMBEDDINGS/MOCK_LLM for a canned-response dev flow).
 # System libs required: tesseract-ocr, poppler-utils, libmagic.
 processing = [
-  "paddleocr>=2.8",
-  "paddlepaddle>=2.6",
-  "pytesseract>=0.3.13",            # Tesseract fallback
-  "docling>=2.0",                   # layout-aware parsing (primary)
-  "unstructured>=0.15",             # parsing fallback
-  "sentence-transformers>=3.0",     # BGE-large embeddings + BGE reranker (cross-encoder)
-  "pypdf>=5.0",                     # text-layer detection / native PDF text extraction
-  "pdf2image>=1.17",
-  "pytesseract>=0.3.13",            # Tesseract fallback
+  "pytesseract>=0.3.13",            # Tesseract OCR fallback
+  "pdf2image>=1.17",                # PDF -> images for OCR (needs poppler-utils)
 ]
 
 dev = [
@@ -70,7 +60,6 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.6",
   "mypy>=1.11",
-  "faker>=28.0",                    # seed/dev data
   "aiosqlite>=0.20",
   "fakeredis>=2.26",
 ]

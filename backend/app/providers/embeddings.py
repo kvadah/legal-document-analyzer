@@ -1,13 +1,22 @@
 """Embedding provider abstraction for ingestion pipeline."""
+
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 from typing import Protocol
 
+import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 VECTOR_SIZE = 1024
+
+_GEMINI_EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 class EmbeddingProvider(Protocol):
@@ -21,29 +30,51 @@ class MockEmbeddingProvider:
         return [_hash_to_vector(text) for text in texts]
 
 
-class SentenceTransformerEmbeddingProvider:
-    """Self-hosted BGE-large embeddings via sentence-transformers."""
+class GeminiEmbeddingProvider:
+    """Embeddings via the Google Gemini API (no local ML stack required)."""
 
     def __init__(self) -> None:
-        self._model = None
+        if not settings.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY must be set when MOCK_EMBEDDINGS=false")
+        self._api_key: str = settings.gemini_api_key
+        self._client: httpx.AsyncClient | None = None
 
-    def _load_model(self):
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=60.0)
+        return self._client
 
-            self._model = SentenceTransformer(settings.embedding_model_name)
-        return self._model
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=20), reraise=True)
+    async def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        client = await self._get_client()
+        model = settings.embedding_model_name.removeprefix("models/")
+        response = await client.post(
+            f"{_GEMINI_EMBED_URL}/{model}:batchEmbedContents",
+            headers={"x-goog-api-key": self._api_key},
+            json={
+                "requests": [
+                    {
+                        "model": f"models/{model}",
+                        "content": {"parts": [{"text": text}]},
+                        "taskType": "RETRIEVAL_DOCUMENT",
+                        "outputDimensionality": VECTOR_SIZE,
+                    }
+                    for text in texts
+                ]
+            },
+        )
+        response.raise_for_status()
+        return [item["values"] for item in response.json()["embeddings"]]
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        model = self._load_model()
-        vectors = await asyncio_to_thread(model.encode, texts, normalize_embeddings=True)
-        return [vector.tolist() for vector in vectors]
-
-
-async def asyncio_to_thread(func, *args, **kwargs):
-    import asyncio
-
-    return await asyncio.to_thread(func, *args, **kwargs)
+        if not texts:
+            return []
+        result = await self._embed_batch(texts)
+        logger.info(
+            "embeddings.call",
+            extra={"model": settings.embedding_model_name, "count": len(texts)},
+        )
+        return result
 
 
 def _hash_to_vector(text: str) -> list[float]:
@@ -72,7 +103,7 @@ def get_embedding_provider() -> EmbeddingProvider:
         if settings.mock_embeddings:
             _provider = MockEmbeddingProvider()
         else:
-            _provider = SentenceTransformerEmbeddingProvider()
+            _provider = GeminiEmbeddingProvider()
     return _provider
 
 

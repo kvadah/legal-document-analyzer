@@ -9,6 +9,7 @@ import pytest_asyncio
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import get_session
+from app.llm import MockLLMProvider, reset_llm_provider
 from app.main import app
 from app.providers.embeddings import MockEmbeddingProvider, reset_embedding_provider
 from app.services.storage_service import LocalStorageService, reset_storage
@@ -29,19 +30,25 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(tmp_path / "storage"))
     monkeypatch.setenv("RUN_INGESTION_INLINE", "true")
+    monkeypatch.setenv("RUN_AI_PIPELINE_INLINE", "true")
     monkeypatch.setenv("MOCK_EMBEDDINGS", "true")
+    monkeypatch.setenv("MOCK_LLM", "true")
     settings.storage_backend = "local"
     settings.local_storage_path = str(tmp_path / "storage")
     settings.run_ingestion_inline = True
+    settings.run_ai_pipeline_inline = True
     settings.mock_embeddings = True
+    settings.mock_llm = True
     reset_storage(LocalStorageService(settings.local_storage_path))
     reset_embedding_provider(MockEmbeddingProvider())
+    reset_llm_provider(MockLLMProvider())
     yield
 
 
 @pytest.fixture(autouse=True)
 def pipeline_test_session(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.pipelines.ingestion.pipeline.AsyncSessionLocal", TestSessionLocal)
+    monkeypatch.setattr("app.pipelines.ai.pipeline.AsyncSessionLocal", TestSessionLocal)
 
 
 @pytest.fixture(autouse=True)

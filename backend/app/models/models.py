@@ -1,7 +1,7 @@
 """SQLAlchemy models for the Legal Document Analyzer."""
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
@@ -9,6 +9,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -65,7 +67,9 @@ class User(BaseModel):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole), default=UserRole.REVIEWER, nullable=False
+        Enum(UserRole, values_callable=lambda x: [e.value for e in x]),
+        default=UserRole.REVIEWER,
+        nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -143,10 +147,14 @@ class Document(BaseModel):
         String(512), nullable=True
     )
     document_type: Mapped[DocumentType] = mapped_column(
-        Enum(DocumentType), default=DocumentType.OTHER, nullable=False
+        Enum(DocumentType, values_callable=lambda x: [e.value for e in x]),
+        default=DocumentType.OTHER,
+        nullable=False,
     )
     status: Mapped[DocumentStatus] = mapped_column(
-        Enum(DocumentStatus), default=DocumentStatus.UPLOADED, nullable=False
+        Enum(DocumentStatus, values_callable=lambda x: [e.value for e in x]),
+        default=DocumentStatus.UPLOADED,
+        nullable=False,
     )
     status_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     contract_score: Mapped[float | None] = mapped_column(Numeric(3, 1), nullable=True)
@@ -267,6 +275,23 @@ class ClauseType(str, enum.Enum):
     FORCE_MAJEURE = "force_majeure"
 
 
+class UUIDListJSON(TypeDecorator):
+    """JSON storage of a UUID list for SQLite (tests); Postgres uses native ARRAY(UUID)."""
+
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return [str(v) if isinstance(v, uuid.UUID) else v for v in value]
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return [uuid.UUID(v) if isinstance(v, str) else v for v in value]
+
+
 class Clause(BaseModel):
     """Clause model."""
 
@@ -275,14 +300,17 @@ class Clause(BaseModel):
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False
     )
-    clause_type: Mapped[ClauseType] = mapped_column(Enum(ClauseType), nullable=False)
+    clause_type: Mapped[ClauseType] = mapped_column(
+        Enum(ClauseType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
     extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     source_chunk_ids: Mapped[list | None] = mapped_column(
-        ARRAY(UUID(as_uuid=True)).with_variant(JSON, "sqlite"), nullable=True
+        ARRAY(UUID(as_uuid=True)).with_variant(UUIDListJSON(), "sqlite"), nullable=True
     )
 
     __table_args__ = (
@@ -338,14 +366,22 @@ class Risk(BaseModel):
     clause_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clauses.id"), nullable=True
     )
-    risk_type: Mapped[RiskType] = mapped_column(Enum(RiskType), nullable=False)
-    severity: Mapped[RiskSeverity] = mapped_column(Enum(RiskSeverity), nullable=False)
+    risk_type: Mapped[RiskType] = mapped_column(
+        Enum(RiskType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    severity: Mapped[RiskSeverity] = mapped_column(
+        Enum(RiskSeverity, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
     description: Mapped[str] = mapped_column(Text, nullable=False)
     recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     status: Mapped[RiskStatus] = mapped_column(
-        Enum(RiskStatus), default=RiskStatus.FLAGGED, nullable=False
+        Enum(RiskStatus, values_callable=lambda x: [e.value for e in x]),
+        default=RiskStatus.FLAGGED,
+        nullable=False,
     )
 
     __table_args__ = (
@@ -378,7 +414,10 @@ class Entity(BaseModel):
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False
     )
-    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType), nullable=False)
+    entity_type: Mapped[EntityType] = mapped_column(
+        Enum(EntityType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
     value: Mapped[str] = mapped_column(String(512), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -425,7 +464,8 @@ class Obligation(BaseModel):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     deadline_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     deadline_type: Mapped[DeadlineType] = mapped_column(
-        Enum(DeadlineType), nullable=False
+        Enum(DeadlineType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
     )
     penalty_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_clause_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -433,7 +473,9 @@ class Obligation(BaseModel):
     )
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[ObligationStatus] = mapped_column(
-        Enum(ObligationStatus), default=ObligationStatus.UPCOMING, nullable=False
+        Enum(ObligationStatus, values_callable=lambda x: [e.value for e in x]),
+        default=ObligationStatus.UPCOMING,
+        nullable=False,
     )
 
     __table_args__ = (
@@ -459,6 +501,12 @@ class DocumentSummary(BaseModel):
     termination_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
     key_risks: Mapped[str | None] = mapped_column(Text, nullable=True)
     financial_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    governing_law: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiration_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    contract_value: Mapped[float | None] = mapped_column(Numeric(15, 2), nullable=True)
+    contract_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    source_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     __table_args__ = (Index("ix_document_summaries_document_id", "document_id"),)
 

@@ -18,6 +18,8 @@ class DocumentOut(BaseModel):
     language: str | None = None
     file_hash: str | None = None
     possible_duplicate_of: str | None = None
+    contract_score: float | None = None
+    ai_confidence_score: float | None = None
     created_at: datetime
     updated_at: datetime
 

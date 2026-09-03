@@ -41,6 +41,12 @@ def _document_to_out(doc: Document, *, possible_duplicate_of: str | None = None)
         language=doc.language,
         file_hash=doc.file_hash,
         possible_duplicate_of=possible_duplicate_of,
+        contract_score=(
+            float(doc.contract_score) if doc.contract_score is not None else None
+        ),
+        ai_confidence_score=(
+            float(doc.ai_confidence_score) if doc.ai_confidence_score is not None else None
+        ),
         created_at=doc.created_at,
         updated_at=doc.updated_at,
     )

@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@9.12.3 && pnpm install --no-frozen-lockfile
 
 # Copy application code
 COPY . .
@@ -19,22 +19,20 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm
+# Install pnpm (same version that generated the lockfile)
+RUN npm install -g pnpm@9.12.3
 
-# Copy only necessary files from builder
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+# Single non-recursive chown (instant) — everything below is created as node,
+# so no slow `chown -R` over node_modules/.next is ever needed.
+RUN chown node:node /app
 
-# Copy built application
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
+USER node
+COPY --chown=node:node package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --no-frozen-lockfile
 
-# Create non-root user
-RUN addgroup -g 1000 appuser && adduser -u 1000 -G appuser -s /bin/sh -D appuser
-RUN chown -R appuser:appuser /app
-
-USER appuser
+# Copy built application (owned by node via --chown)
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
 
 EXPOSE 3000
 

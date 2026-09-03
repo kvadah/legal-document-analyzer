@@ -29,10 +29,11 @@ tests/
 ## Dependencies
 ```bash
 uv sync --extra dev                    # core + dev tools
-uv sync --extra dev --extra processing # also OCR/parsing/embeddings (heavy)
+uv sync --extra dev --extra processing # also OCR fallback (pytesseract, pdf2image)
 ```
 The `processing` extra needs system libs: `tesseract-ocr`, `poppler-utils`, `libmagic`.
 These ship in the worker Docker image; install locally only for out-of-container runs.
+Embeddings use the Gemini API (`GEMINI_API_KEY`, no local ML stack); set `MOCK_EMBEDDINGS=false` to enable.
 
 ## Common commands (available once app code lands)
 ```bash

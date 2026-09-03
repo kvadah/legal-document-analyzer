@@ -42,25 +42,31 @@ class Settings(BaseSettings):
     # Claude (Anthropic)
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_fast_model: str = "claude-3-5-haiku-20241022"
 
     # OpenAI
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    openai_fast_model: str = "gpt-4o-mini"
 
     # Default provider
     default_llm_provider: str = "anthropic"
+    mock_llm: bool = True
 
-    # --- Logging & Observability ---
+    # --- Embeddings (Gemini API) ---
+    gemini_api_key: str | None = None
+    mock_embeddings: bool = True
+    embedding_model_name: str = "gemini-embedding-001"
+
+    # --- Logging ---
     log_level: str = "INFO"
-    sentry_dsn: str | None = None
 
     # --- Upload / ingestion ---
     max_upload_mb: int = 50
     storage_backend: str = "s3"  # "s3" or "local"
     local_storage_path: str = "/tmp/legal-doc-storage"
     run_ingestion_inline: bool = False
-    mock_embeddings: bool = True
-    embedding_model_name: str = "BAAI/bge-large-en-v1.5"
+    run_ai_pipeline_inline: bool = False
     chunk_target_tokens: int = 400
     chunk_max_tokens: int = 800
     chunk_overlap_ratio: float = 0.1

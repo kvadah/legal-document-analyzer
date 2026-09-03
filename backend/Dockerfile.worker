@@ -13,10 +13,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy application code and install dependencies (including processing extras)
 COPY . .
-RUN pip install --no-cache-dir ".[processing]"
+RUN pip install --no-cache-dir --timeout 600 --retries 20 ".[processing]"
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+RUN useradd -m -u 1000 appuser
 USER appuser
 
 # Run the Arq worker
