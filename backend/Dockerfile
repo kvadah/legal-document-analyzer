@@ -9,9 +9,17 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy application code and install dependencies
+# Install Python dependencies first — this layer is cached unless
+# pyproject.toml changes, so code edits never trigger a full re-download.
+COPY pyproject.toml ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --timeout 600 --retries 20 \
+    $(python -c "import tomllib; print(' '.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))")
+
+# Copy application code (only layers from here on rebuild on code changes)
 COPY . .
-RUN pip install --no-cache-dir --timeout 600 --retries 20 .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --timeout 600 --retries 20 .
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser

@@ -404,6 +404,16 @@ export interface AskHandlers {
     onError?: (message: string) => void
 }
 
+/** Union of payloads the Q&A SSE stream can send (fields present per event). */
+interface AskSsePayload {
+    citations?: AskCitation[]
+    text?: string
+    conversation_id?: string
+    found_in_document?: boolean
+    answer?: string
+    message?: string
+}
+
 /**
  * Stream a grounded answer for a question about one document.
  *
@@ -445,16 +455,21 @@ export async function apiAskStream(
             else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
         }
         if (!eventName || dataLines.length === 0) return
-        let data: any
+        let data: AskSsePayload
         try {
-            data = JSON.parse(dataLines.join('\n'))
+            data = JSON.parse(dataLines.join('\n')) as AskSsePayload
         } catch {
             return
         }
         if (eventName === 'citations') handlers.onCitations?.(data.citations ?? [])
         else if (eventName === 'delta') handlers.onDelta?.(data.text ?? '')
-        else if (eventName === 'done') handlers.onDone?.(data)
-        else if (eventName === 'error') handlers.onError?.(data?.message ?? 'Question failed')
+        else if (eventName === 'done')
+            handlers.onDone?.({
+                conversation_id: data.conversation_id ?? '',
+                found_in_document: data.found_in_document ?? false,
+                answer: data.answer ?? '',
+            })
+        else if (eventName === 'error') handlers.onError?.(data.message ?? 'Question failed')
     }
 
     for (;;) {

@@ -28,12 +28,10 @@ const TRIAGE_ORDER: RiskTriageStatus[] = ['flagged', 'acknowledged', 'dismissed'
 
 function RiskCard({
     risk,
-    documentId,
     onStatusChange,
     index,
 }: {
     risk: RiskOut
-    documentId: string
     onStatusChange: (riskId: string, status: RiskTriageStatus) => Promise<void>
     index: number
 }) {
@@ -194,7 +192,6 @@ export default function RisksTab({
                     <RiskCard
                         key={risk.id}
                         risk={risk}
-                        documentId={document.id}
                         onStatusChange={updateStatus}
                         index={i}
                     />

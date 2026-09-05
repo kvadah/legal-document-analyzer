@@ -12,10 +12,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d legal_doc_analyzer"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 30
+      start_period: 120s
     networks:
       - legal-doc-network
 
@@ -46,10 +47,15 @@ services:
     environment:
       QDRANT_API_KEY: ""
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
+      # NOTE: must use 127.0.0.1, not "localhost" — name resolution for
+      # "localhost" is unreliable in this image's glibc (2.41) under Docker
+      # Desktop/WSL2, which makes bash's /dev/tcp fail with a misleading
+      # "No such file or directory" and marks the container unhealthy.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
     networks:
       - legal-doc-network
 
@@ -109,10 +115,13 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      # 127.0.0.1 instead of "localhost" — see qdrant healthcheck note
+      # (glibc 2.41 name resolution for localhost is flaky under WSL2).
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health/live"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
     networks:
       - legal-doc-network
     volumes:
