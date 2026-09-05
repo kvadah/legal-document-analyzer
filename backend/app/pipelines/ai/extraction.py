@@ -101,3 +101,18 @@ class SummaryExtraction(BaseModel):
     termination_summary: str | None = None
     key_risks_summary: str | None = None
     financial_terms_summary: str | None = None
+
+
+class QaCitation(BaseModel):
+    """One citation backing part of a RAG answer."""
+
+    chunk_id: str
+    supporting_sentence: str = Field(min_length=1)
+
+
+class QaAnswerResult(BaseModel):
+    """Structured output of a grounded RAG Q&A call (07-feature-spec §4)."""
+
+    found_in_document: bool
+    answer: str
+    citations: list[QaCitation] = Field(default_factory=list)

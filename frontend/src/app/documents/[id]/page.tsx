@@ -5,9 +5,9 @@
  * (10-frontend-spec.md §4): document viewer pane + tabbed analysis pane,
  * wired to the Phase 2/3 pipelines.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useSearchParams, useParams } from 'next/navigation'
 import {
     AlertCircle,
     ArrowLeft,
@@ -46,6 +46,8 @@ import ClausesTab from '@/components/analysis/ClausesTab'
 import RisksTab from '@/components/analysis/RisksTab'
 import ObligationsTab from '@/components/analysis/ObligationsTab'
 import EntitiesTab from '@/components/analysis/EntitiesTab'
+import QaTab from '@/components/analysis/QaTab'
+import ExportMenu from '@/components/analysis/ExportMenu'
 import { contractScoreTone } from '@/components/analysis/ScoreCards'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -70,7 +72,7 @@ const TEXT_AVAILABLE_STATUSES = [
 
 const LOW_CONFIDENCE_THRESHOLD = 0.6
 
-type TabKey = 'summary' | 'clauses' | 'risks' | 'obligations' | 'entities'
+type TabKey = 'summary' | 'clauses' | 'risks' | 'obligations' | 'entities' | 'qa'
 
 function PageSkeleton() {
     return (
@@ -91,9 +93,13 @@ function PageSkeleton() {
     )
 }
 
-export default function AnalysisPage() {
+function AnalysisView() {
     const params = useParams<{ id: string }>()
     const documentId = params.id
+    const searchParams = useSearchParams()
+    const initialPage = Number(searchParams.get('page')) || null
+    const initialTab = searchParams.get('tab') as TabKey | null
+    const initialQuestion = searchParams.get('q')
 
     const [doc, setDoc] = useState<DocumentOut | null>(null)
     const [docLoading, setDocLoading] = useState(true)
@@ -106,10 +112,20 @@ export default function AnalysisPage() {
     const [analysisLoading, setAnalysisLoading] = useState(false)
     const [analysisError, setAnalysisError] = useState<string | null>(null)
 
-    const [activeTab, setActiveTab] = useState<TabKey>('summary')
+    const [activeTab, setActiveTab] = useState<TabKey>(
+        initialTab === 'qa' ||
+            initialTab === 'summary' ||
+            initialTab === 'clauses' ||
+            initialTab === 'risks' ||
+            initialTab === 'obligations' ||
+            initialTab === 'entities'
+            ? initialTab
+            : 'summary',
+    )
     const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
     const [retrying, setRetrying] = useState(false)
     const jumpCounter = useRef(0)
+    const initialJumpDone = useRef(false)
 
     const loadDocument = useCallback(
         async (silent = false) => {
@@ -201,6 +217,13 @@ export default function AnalysisPage() {
         [],
     )
 
+    // Deep-link support: /documents/{id}?page=N jumps the viewer once loaded
+    useEffect(() => {
+        if (!text || initialJumpDone.current || !initialPage) return
+        initialJumpDone.current = true
+        requestJump(initialPage)
+    }, [text, initialPage, requestJump])
+
     const retry = useCallback(async () => {
         setRetrying(true)
         try {
@@ -236,6 +259,7 @@ export default function AnalysisPage() {
                 label: 'Entities',
                 count: analysis?.entities.total,
             },
+            { key: 'qa' as TabKey, label: 'Q&A' },
         ],
         [analysis],
     )
@@ -345,6 +369,7 @@ export default function AnalysisPage() {
 
                         {analysis && (
                             <div className="flex items-center gap-2">
+                                <ExportMenu documentId={documentId} />
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab('summary')}
@@ -542,8 +567,15 @@ export default function AnalysisPage() {
                                         })}
                                     </nav>
 
-                                    {/* Tab content */}
-                                    <div className="flex-1 overflow-y-auto p-4">
+                                    {/* Tab content — Q&A manages its own scroll */}
+                                    <div
+                                        className={cn(
+                                            'min-h-0 flex-1 p-4',
+                                            activeTab === 'qa'
+                                                ? 'flex'
+                                                : 'overflow-y-auto',
+                                        )}
+                                    >
                                         {analysisLoading && (
                                             <div className="space-y-3">
                                                 {[0, 1, 2].map(i => (
@@ -588,6 +620,14 @@ export default function AnalysisPage() {
                                                             analysis.entities
                                                         }
                                                     />
+                                                )}
+                                                {activeTab === 'qa' && (
+                                                    <div className="min-h-0 w-full">
+                                                        <QaTab
+                                                            documentId={documentId}
+                                                            initialQuestion={initialQuestion}
+                                                        />
+                                                    </div>
                                                 )}
                                             </>
                                         )}
@@ -646,5 +686,14 @@ export default function AnalysisPage() {
                 </div>
             </ViewerJumpContext.Provider>
         </AppLayout>
+    )
+}
+
+export default function AnalysisPage() {
+    // useSearchParams requires a Suspense boundary during prerendering
+    return (
+        <Suspense fallback={null}>
+            <AnalysisView />
+        </Suspense>
     )
 }

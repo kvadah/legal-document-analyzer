@@ -6,12 +6,10 @@ import logging
 import uuid
 from uuid import UUID
 
-from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.models import Chunk, Document, DocumentStatus
 from app.pipelines.ingestion.chunker import chunk_paragraphs
@@ -182,13 +180,9 @@ async def _run_stages(session: AsyncSession, doc: Document) -> None:
 
 
 async def _upsert_qdrant_points(points: list[PointStruct]) -> None:
+    """Write chunk embeddings to the configured vector store (Qdrant or in-memory)."""
     if not points:
         return
+    from app.services.vector_store import get_vector_store
 
-    def _write() -> None:
-        client = QdrantClient(url=settings.qdrant_url)
-        client.upsert(collection_name=settings.qdrant_collection_name, points=points)
-
-    import asyncio
-
-    await asyncio.to_thread(_write)
+    await get_vector_store().upsert(points)

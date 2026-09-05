@@ -326,3 +326,177 @@ export async function apiGetObligations(
 export async function apiGetScore(documentId: string): Promise<ScoreOut> {
     return apiGet<ScoreOut>(`/documents/${documentId}/score`)
 }
+
+// ── Search ───────────────────────────────────────────────────────────────────
+
+export type SearchMode = 'keyword' | 'semantic' | 'hybrid'
+
+export interface SearchFilters {
+    document_type?: string | null
+    date_from?: string | null
+    date_to?: string | null
+    document_ids?: string[] | null
+}
+
+export interface SearchRequest {
+    query: string
+    mode: SearchMode
+    filters?: SearchFilters
+    limit?: number
+    offset?: number
+}
+
+export interface ResultDocument {
+    id: string
+    filename: string
+    document_type: string
+    status: string
+    page_count?: number | null
+    contract_score?: number | null
+    created_at: string
+}
+
+export interface SearchSnippet {
+    chunk_id: string
+    text: string
+    page_number: number
+    section_heading?: string | null
+    score: number
+    source: 'keyword' | 'semantic' | 'both'
+}
+
+export interface SearchResultGroup {
+    document: ResultDocument
+    snippets: SearchSnippet[]
+}
+
+export interface SearchResponse {
+    query: string
+    mode: SearchMode
+    groups: SearchResultGroup[]
+    total_documents: number
+    total_snippets: number
+}
+
+export async function apiSearch(request: SearchRequest): Promise<SearchResponse> {
+    return apiPost<SearchResponse>('/search', {
+        query: request.query,
+        mode: request.mode,
+        filters: request.filters ?? {},
+        limit: request.limit ?? 20,
+        offset: request.offset ?? 0,
+    })
+}
+
+// ── RAG Q&A (SSE) ────────────────────────────────────────────────────────────
+
+export interface AskCitation {
+    index: number
+    chunk_id: string
+    page_number: number
+    quote: string
+}
+
+export interface AskHandlers {
+    onCitations?: (citations: AskCitation[]) => void
+    onDelta?: (text: string) => void
+    onDone?: (result: { conversation_id: string; found_in_document: boolean; answer: string }) => void
+    onError?: (message: string) => void
+}
+
+/**
+ * Stream a grounded answer for a question about one document.
+ *
+ * Uses fetch + ReadableStream instead of EventSource because the access
+ * token lives in memory and must be attached as an Authorization header.
+ */
+export async function apiAskStream(
+    documentId: string,
+    question: string,
+    conversationId: string | null,
+    handlers: AskHandlers,
+): Promise<void> {
+    const body: Record<string, unknown> = { question }
+    if (conversationId) body.conversation_id = conversationId
+
+    const res = await apiFetch(`/documents/${documentId}/ask`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        handlers.onError?.(err?.detail?.message ?? 'Question failed')
+        return
+    }
+    if (!res.body) {
+        handlers.onError?.('Streaming is not supported in this browser')
+        return
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const dispatch = (block: string) => {
+        let eventName = ''
+        const dataLines: string[] = []
+        for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim()
+            else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+        }
+        if (!eventName || dataLines.length === 0) return
+        let data: any
+        try {
+            data = JSON.parse(dataLines.join('\n'))
+        } catch {
+            return
+        }
+        if (eventName === 'citations') handlers.onCitations?.(data.citations ?? [])
+        else if (eventName === 'delta') handlers.onDelta?.(data.text ?? '')
+        else if (eventName === 'done') handlers.onDone?.(data)
+        else if (eventName === 'error') handlers.onError?.(data?.message ?? 'Question failed')
+    }
+
+    for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let separator = buffer.indexOf('\n\n')
+        while (separator !== -1) {
+            dispatch(buffer.slice(0, separator))
+            buffer = buffer.slice(separator + 2)
+            separator = buffer.indexOf('\n\n')
+        }
+    }
+    if (buffer.trim()) dispatch(buffer)
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+
+export type ExportFormat = 'pdf' | 'docx' | 'json'
+
+export async function apiExportDocument(
+    documentId: string,
+    format: ExportFormat,
+): Promise<{ blob: Blob; filename: string }> {
+    const res = await apiFetch(`/documents/${documentId}/export?format=${format}`)
+    if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.detail?.message ?? 'Export failed')
+    }
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') ?? ''
+    const match = disposition.match(/filename="?([^";]+)"?/)
+    return { blob, filename: match?.[1] ?? `analysis.${format}` }
+}
+
+export function downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+}

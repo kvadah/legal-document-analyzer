@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     # --- Qdrant Vector DB ---
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection_name: str = "documents"
+    # "qdrant" in production; "memory" for tests/dev without a Qdrant instance
+    vector_search_backend: str = "qdrant"
 
     # --- LLM Providers ---
     # Claude (Anthropic)
@@ -72,6 +74,17 @@ class Settings(BaseSettings):
     chunk_overlap_ratio: float = 0.1
     ocr_skip_min_chars_per_page: int = 50
     ocr_low_confidence_threshold: float = 0.7
+
+    # --- Search & RAG Q&A (07-feature-spec-comparison-search.md §3–4) ---
+    search_default_limit: int = 20
+    semantic_candidate_k: int = 50
+    rrf_k: int = 60
+    rag_top_k: int = 6
+    # Below this best-match similarity the Q&A endpoint answers "not found"
+    # instead of forcing a generation on weak context. 0 disables the check.
+    rag_similarity_threshold: float = 0.0
+    rag_history_turns: int = 3
+    rag_conversation_ttl_seconds: int = 24 * 60 * 60
 
     @property
     def max_upload_bytes(self) -> int:

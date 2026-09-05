@@ -24,6 +24,8 @@ from app.pipelines.ai.extraction import (
     ObligationInstance,
     ObligationListResult,
     PartyInfo,
+    QaAnswerResult,
+    QaCitation,
     RiskJudgmentResult,
     SummaryExtraction,
 )
@@ -114,6 +116,8 @@ class MockLLMProvider:
             result = self._risk_judgment(chunks, prompt)
         elif schema is SummaryExtraction:
             result = self._summary(context)
+        elif schema is QaAnswerResult:
+            result = self._qa(chunks, prompt)
         else:
             raise ValueError(f"MockLLMProvider cannot handle schema {schema.__name__}")
         return StructuredResult(
@@ -122,6 +126,74 @@ class MockLLMProvider:
             prompt_version=prompt_version,
             latency_ms=0,
             token_usage={"input": 0, "output": 0},
+        )
+
+    def _qa(self, chunks: list[_Chunk], prompt: str) -> QaAnswerResult:
+        """Heuristic grounded Q&A: pick sentences sharing keywords with the question.
+
+        The question itself is embedded in the prompt after the template; pull it
+        out, tokenize it, and cite verbatim sentences from the context chunks
+        that contain those keywords — so grounding validation always passes.
+        """
+        question = prompt.split("Question:")[-1].split("Context:")[0].strip()
+        advisory = re.search(
+            r"\b(should|shall) (i|we)\b|\badvise\b|\brecommend\b", question, re.IGNORECASE
+        )
+        if advisory:
+            return QaAnswerResult(
+                found_in_document=True,
+                answer=(
+                    "I can't provide legal advice or a recommendation on that decision. "
+                    "I can tell you what the document says about the relevant subject — "
+                    "whether to proceed is a decision for you and your legal counsel."
+                ),
+                citations=[],
+            )
+
+        stop = {
+            "what", "which", "who", "whom", "whose", "when", "where", "why", "how",
+            "is", "are", "was", "were", "does", "do", "did", "the", "a", "an",
+            "of", "in", "on", "for", "to", "and", "or", "it", "this", "that",
+            "there", "any", "clause", "document", "agreement", "contract",
+        }
+        keywords = {
+            w for w in re.findall(r"[a-zA-Z$][a-zA-Z0-9'-]*", question.lower())
+            if w not in stop and len(w) > 2
+        }
+        if not keywords:
+            keywords = {question.lower().strip()}
+
+        cited: list[QaCitation] = []
+        parts: list[str] = []
+        for chunk in chunks:
+            if not chunk.chunk_id:
+                continue
+            for sentence in self._sentences(chunk.text):
+                lower = sentence.lower()
+                if any(kw in lower for kw in keywords):
+                    cited.append(
+                        QaCitation(chunk_id=chunk.chunk_id, supporting_sentence=sentence)
+                    )
+                    parts.append(f"{sentence} [{len(cited)}]")
+                    if len(cited) >= 4:
+                        break
+            if len(cited) >= 4:
+                break
+
+        if not cited:
+            return QaAnswerResult(
+                found_in_document=False,
+                answer=(
+                    "I couldn't find information about this in the document."
+                ),
+                citations=[],
+            )
+        return QaAnswerResult(
+            found_in_document=True,
+            answer=(
+                "Based on the document: " + " ".join(parts)
+            ),
+            citations=cited,
         )
 
     def _sentences(self, text: str) -> list[str]:

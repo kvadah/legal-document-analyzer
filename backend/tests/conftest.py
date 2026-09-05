@@ -13,6 +13,7 @@ from app.llm import MockLLMProvider, reset_llm_provider
 from app.main import app
 from app.providers.embeddings import MockEmbeddingProvider, reset_embedding_provider
 from app.services.storage_service import LocalStorageService, reset_storage
+from app.services.vector_store import InMemoryVectorStore, reset_vector_store
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -33,16 +34,21 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("RUN_AI_PIPELINE_INLINE", "true")
     monkeypatch.setenv("MOCK_EMBEDDINGS", "true")
     monkeypatch.setenv("MOCK_LLM", "true")
+    monkeypatch.setenv("VECTOR_SEARCH_BACKEND", "memory")
     settings.storage_backend = "local"
     settings.local_storage_path = str(tmp_path / "storage")
     settings.run_ingestion_inline = True
     settings.run_ai_pipeline_inline = True
     settings.mock_embeddings = True
     settings.mock_llm = True
+    settings.vector_search_backend = "memory"
+    settings.rag_similarity_threshold = 0.0
     reset_storage(LocalStorageService(settings.local_storage_path))
     reset_embedding_provider(MockEmbeddingProvider())
     reset_llm_provider(MockLLMProvider())
+    reset_vector_store(InMemoryVectorStore())
     yield
+    reset_vector_store(InMemoryVectorStore())
 
 
 @pytest.fixture(autouse=True)

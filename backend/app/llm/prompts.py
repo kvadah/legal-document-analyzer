@@ -130,3 +130,27 @@ Return:
 - key_risks_summary: the most important risk flags in plain language, or null.
 - financial_terms_summary: the key financial terms, or null.
 """
+
+QA_PROMPT = """
+Answer the user's question about the document using ONLY the CONTEXT chunks
+provided (each prefixed with [chunk_id | page N]).
+
+Rules:
+1. Answer only from the provided context. If the answer is not in the context,
+   set found_in_document=false, answer with a short statement that the
+   document does not cover it, and return no citations — do not guess.
+2. Mark each claim in the answer with an inline citation marker [1], [2], ...
+   referring to the order of the citations list you return.
+3. Every citation must identify the specific supporting sentence, copied
+   verbatim from the chunk, plus that chunk's id. Cite the sentence level,
+   not "this chunk generally".
+4. If the question asks for legal advice, a recommendation, or a prediction
+   ("Should I sign this?"), do not give one. Say what the document states
+   about the relevant subject and note that the decision belongs to the
+   user and their legal counsel.
+5. Stay factual and neutral. Quote the document where precision matters.
+
+The conversation history (if any) is provided only so follow-up questions can
+be understood; retrieval for THIS question is based on the context below, so
+do not answer from history alone.
+"""
