@@ -104,11 +104,28 @@ export async function apiUploadDocuments(files: File[]): Promise<UploadResponse>
 
 // ── Generic helpers ───────────────────────────────────────────────────────────
 
+/** Error carrying the backend error code (e.g. `analysis_not_ready`). */
+export class ApiError extends Error {
+    code: string
+
+    constructor(message: string, code = 'error') {
+        super(message)
+        this.code = code
+    }
+}
+
+async function _toApiError(res: Response, fallback: string): Promise<ApiError> {
+    const err = await res.json().catch(() => null)
+    return new ApiError(
+        err?.detail?.message ?? err?.detail ?? fallback,
+        err?.detail?.code ?? 'error',
+    )
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
     const res = await apiFetch(path)
     if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.detail?.message ?? `GET ${path} failed`)
+        throw await _toApiError(res, `GET ${path} failed`)
     }
     return res.json()
 }
@@ -119,8 +136,193 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
         body: JSON.stringify(body),
     })
     if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err?.detail?.message ?? `POST ${path} failed`)
+        throw await _toApiError(res, `POST ${path} failed`)
     }
     return res.json()
+}
+
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+    const res = await apiFetch(path, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+        throw await _toApiError(res, `PATCH ${path} failed`)
+    }
+    return res.json()
+}
+
+// ── Document text (viewer source) ────────────────────────────────────────────
+
+export interface PageBlock {
+    chunk_index: number
+    text: string
+    section_heading?: string | null
+}
+
+export interface DocumentPage {
+    page_number: number
+    blocks: PageBlock[]
+}
+
+export interface DocumentTextResponse {
+    document_id: string
+    page_count: number
+    pages: DocumentPage[]
+}
+
+export async function apiGetDocumentText(
+    documentId: string,
+): Promise<DocumentTextResponse> {
+    return apiGet<DocumentTextResponse>(`/documents/${documentId}/text`)
+}
+
+// ── Analysis ─────────────────────────────────────────────────────────────────
+
+export interface PartyOut {
+    name: string
+    role?: string | null
+}
+
+export interface SummaryOut {
+    document_id: string
+    parties: PartyOut[]
+    purpose?: string | null
+    duration?: string | null
+    termination_conditions?: string | null
+    key_risks?: string | null
+    financial_terms?: string | null
+    governing_law?: string | null
+    effective_date?: string | null
+    expiration_date?: string | null
+    contract_value?: number | null
+    contract_currency?: string | null
+}
+
+export interface ClauseOut {
+    id: string
+    clause_type: string
+    extracted_text: string
+    summary?: string | null
+    page_number: number
+    paragraph_index?: number | null
+    confidence_score?: number | null
+    source_chunk_ids?: string[] | null
+    created_at: string
+}
+
+export interface ClauseListResponse {
+    items: ClauseOut[]
+    not_found: string[]
+    total: number
+}
+
+export type RiskTriageStatus = 'flagged' | 'acknowledged' | 'dismissed'
+
+export interface RiskOut {
+    id: string
+    risk_type: string
+    severity: string
+    description: string
+    recommendation?: string | null
+    page_number?: number | null
+    confidence_score?: number | null
+    status: RiskTriageStatus
+    clause_id?: string | null
+    created_at: string
+}
+
+export interface RiskListResponse {
+    items: RiskOut[]
+    total: number
+}
+
+export interface EntityOut {
+    id: string
+    entity_type: string
+    value: string
+    raw_text: string
+    page_number: number
+    confidence_score?: number | null
+    created_at: string
+}
+
+export interface EntityGroup {
+    entity_type: string
+    items: EntityOut[]
+}
+
+export interface EntityListResponse {
+    groups: EntityGroup[]
+    total: number
+}
+
+export interface ObligationOut {
+    id: string
+    obligated_party: string
+    description: string
+    deadline_date?: string | null
+    deadline_type: string
+    status: string
+    page_number: number
+    created_at: string
+}
+
+export interface ObligationListResponse {
+    items: ObligationOut[]
+    total: number
+}
+
+export interface RiskDeduction {
+    risk_id: string
+    risk_type: string
+    severity: string
+    deduction: number
+}
+
+export interface ScoreOut {
+    document_id: string
+    contract_score?: number | null
+    ai_confidence_score?: number | null
+    scores_version: number
+    breakdown: RiskDeduction[]
+    total_deduction: number
+}
+
+export async function apiGetSummary(documentId: string): Promise<SummaryOut> {
+    return apiGet<SummaryOut>(`/documents/${documentId}/summary`)
+}
+
+export async function apiGetClauses(
+    documentId: string,
+): Promise<ClauseListResponse> {
+    return apiGet<ClauseListResponse>(`/documents/${documentId}/clauses`)
+}
+
+export async function apiGetRisks(documentId: string): Promise<RiskListResponse> {
+    return apiGet<RiskListResponse>(`/documents/${documentId}/risks`)
+}
+
+export async function apiUpdateRiskStatus(
+    documentId: string,
+    riskId: string,
+    status: RiskTriageStatus,
+): Promise<RiskOut> {
+    return apiPatch<RiskOut>(`/documents/${documentId}/risks/${riskId}`, { status })
+}
+
+export async function apiGetEntities(
+    documentId: string,
+): Promise<EntityListResponse> {
+    return apiGet<EntityListResponse>(`/documents/${documentId}/entities`)
+}
+
+export async function apiGetObligations(
+    documentId: string,
+): Promise<ObligationListResponse> {
+    return apiGet<ObligationListResponse>(`/documents/${documentId}/obligations`)
+}
+
+export async function apiGetScore(documentId: string): Promise<ScoreOut> {
+    return apiGet<ScoreOut>(`/documents/${documentId}/score`)
 }

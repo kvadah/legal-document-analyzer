@@ -14,7 +14,12 @@ from app.db.redis import get_redis
 from app.db.session import get_session
 from app.pipelines.status import status_channel
 from app.repositories.document_repo import DocumentRepository
-from app.schemas.document import DocumentListResponse, DocumentOut, UploadResponse
+from app.schemas.document import (
+    DocumentListResponse,
+    DocumentOut,
+    DocumentTextResponse,
+    UploadResponse,
+)
 from app.services import document_service
 from app.workers.pool import enqueue_ingestion
 
@@ -64,6 +69,20 @@ async def get_document(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> DocumentOut:
     return await document_service.get_document(
+        session,
+        current_user=current_user,
+        document_id=document_id,
+    )
+
+
+@router.get("/{document_id}/text", response_model=DocumentTextResponse)
+async def get_document_text(
+    document_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentTextResponse:
+    """Extracted/OCR'd text with page position metadata (09-api-spec.md §2)."""
+    return await document_service.get_document_text(
         session,
         current_user=current_user,
         document_id=document_id,

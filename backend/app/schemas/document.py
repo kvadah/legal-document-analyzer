@@ -49,3 +49,24 @@ class DocumentStatusEvent(BaseModel):
     status: str
     status_detail: str | None = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PageBlock(BaseModel):
+    """One contiguous text block on a page (derived from a stored chunk)."""
+
+    chunk_index: int
+    text: str
+    section_heading: str | None = None
+
+
+class DocumentPage(BaseModel):
+    page_number: int
+    blocks: list[PageBlock]
+
+
+class DocumentTextResponse(BaseModel):
+    """Extracted/OCR'd text with page position metadata (09-api-spec.md §2)."""
+
+    document_id: str
+    page_count: int
+    pages: list[DocumentPage]

@@ -11,11 +11,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import CurrentUser
-from app.models.models import Document
+from app.models.models import Document, DocumentStatus
+from app.repositories.chunk_repo import ChunkRepository
 from app.repositories.document_repo import DocumentRepository
-from app.schemas.document import DocumentOut, UploadDocumentResult
+from app.schemas.document import (
+    DocumentOut,
+    DocumentPage,
+    DocumentTextResponse,
+    PageBlock,
+    UploadDocumentResult,
+)
 from app.services.storage_service import build_document_storage_key, get_storage
 from app.workers.pool import enqueue_ingestion
+
+# Statuses at which chunked text exists and is queryable.
+TEXT_READY_STATUSES = {
+    DocumentStatus.INGESTION_READY,
+    DocumentStatus.AI_PIPELINE_PROCESSING,
+    DocumentStatus.ANALYSIS_READY,
+}
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".rtf"}
 ALLOWED_MIME_TYPES = {
@@ -171,6 +185,45 @@ async def get_document(
     repo = DocumentRepository(session, UUID(current_user.org_id))
     doc = await repo.get_by_id(document_id)
     return _document_to_out(doc)
+
+
+async def get_document_text(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    document_id: UUID,
+) -> DocumentTextResponse:
+    doc_out = await get_document(session, current_user=current_user, document_id=document_id)
+    if DocumentStatus(doc_out.status) not in TEXT_READY_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "document_not_ready",
+                "message": (
+                    "Document text is not available yet "
+                    f"(status: {doc_out.status})."
+                ),
+            },
+        )
+
+    chunks = await ChunkRepository(session).list_for_document(document_id)
+    pages: dict[int, list[PageBlock]] = {}
+    for chunk in chunks:
+        pages.setdefault(chunk.page_number, []).append(
+            PageBlock(
+                chunk_index=chunk.chunk_index,
+                text=chunk.text,
+                section_heading=chunk.section_heading,
+            )
+        )
+    return DocumentTextResponse(
+        document_id=str(document_id),
+        page_count=doc_out.page_count or (max(pages) if pages else 0),
+        pages=[
+            DocumentPage(page_number=page_number, blocks=blocks)
+            for page_number, blocks in sorted(pages.items())
+        ],
+    )
 
 
 async def list_documents(

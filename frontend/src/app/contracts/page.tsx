@@ -255,60 +255,62 @@ export default function ContractsPage() {
                                 {filtered.map(doc => {
                                     const type = docTypeMeta(doc.document_type)
                                     return (
-                                        <li
-                                            key={doc.id}
-                                            className="group grid cursor-default grid-cols-1 gap-3 px-6 py-4 transition-colors hover:bg-indigo-50/30 md:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center md:gap-4"
-                                        >
-                                            {/* Document */}
-                                            <div className="flex min-w-0 items-center gap-3.5">
-                                                <span
-                                                    className={cn(
-                                                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ring-1 ring-inset',
-                                                        type.tile,
-                                                    )}
-                                                >
-                                                    {type.glyph}
-                                                </span>
-                                                <div className="min-w-0">
-                                                    <p className="truncate text-[14px] font-semibold text-ink-900">
-                                                        {doc.filename}
-                                                    </p>
-                                                    <p className="mt-0.5 text-[12px] text-ink-400">
-                                                        {formatBytes(doc.file_size_bytes)}
-                                                        {doc.page_count
-                                                            ? ` · ${doc.page_count} pages`
-                                                            : ''}
-                                                    </p>
+                                        <li key={doc.id} className="group">
+                                            <Link
+                                                href={`/documents/${doc.id}`}
+                                                className="grid grid-cols-1 gap-3 px-6 py-4 transition-colors hover:bg-indigo-50/30 md:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center md:gap-4"
+                                            >
+                                                {/* Document */}
+                                                <div className="flex min-w-0 items-center gap-3.5">
+                                                    <span
+                                                        className={cn(
+                                                            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ring-1 ring-inset',
+                                                            type.tile,
+                                                        )}
+                                                    >
+                                                        {type.glyph}
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <p className="truncate text-[14px] font-semibold text-ink-900 group-hover:text-indigo-700">
+                                                            {doc.filename}
+                                                        </p>
+                                                        <p className="mt-0.5 text-[12px] text-ink-400">
+                                                            {formatBytes(doc.file_size_bytes)}
+                                                            {doc.page_count
+                                                                ? ` · ${doc.page_count} pages`
+                                                                : ''}
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            {/* Type */}
-                                            <div className="flex items-center md:block">
-                                                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
-                                                    Type
-                                                </span>
-                                                <span className="text-[13px] font-medium text-ink-600">
-                                                    {type.label}
-                                                </span>
-                                            </div>
-                                            {/* Status */}
-                                            <div className="flex items-center md:block">
-                                                <span className="mr-2 text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
-                                                    Status
-                                                </span>
-                                                <StatusBadge status={doc.status} />
-                                            </div>
-                                            {/* Uploaded */}
-                                            <div className="flex items-center justify-between md:justify-end">
-                                                <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
-                                                    Uploaded
-                                                </span>
-                                                <span
-                                                    className="whitespace-nowrap text-[12.5px] text-ink-400"
-                                                    title={new Date(doc.created_at).toLocaleString()}
-                                                >
-                                                    {timeAgo(doc.created_at)}
-                                                </span>
-                                            </div>
+                                                {/* Type */}
+                                                <div className="flex items-center md:block">
+                                                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
+                                                        Type
+                                                    </span>
+                                                    <span className="text-[13px] font-medium text-ink-600">
+                                                        {type.label}
+                                                    </span>
+                                                </div>
+                                                {/* Status */}
+                                                <div className="flex items-center md:block">
+                                                    <span className="mr-2 text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
+                                                        Status
+                                                    </span>
+                                                    <StatusBadge status={doc.status} />
+                                                </div>
+                                                {/* Uploaded */}
+                                                <div className="flex items-center justify-between md:justify-end">
+                                                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
+                                                        Uploaded
+                                                    </span>
+                                                    <span
+                                                        className="whitespace-nowrap text-[12.5px] text-ink-400"
+                                                        title={new Date(doc.created_at).toLocaleString()}
+                                                    >
+                                                        {timeAgo(doc.created_at)}
+                                                    </span>
+                                                </div>
+                                            </Link>
                                         </li>
                                     )
                                 })}
