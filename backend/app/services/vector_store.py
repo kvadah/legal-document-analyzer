@@ -93,15 +93,24 @@ class InMemoryVectorStore:
 class QdrantVectorStore:
     """Qdrant-backed store — sync client calls pushed onto a worker thread."""
 
-    def _client(self) -> QdrantClient:
-        return QdrantClient(url=settings.qdrant_url)
+    def __init__(self) -> None:
+        self._client: QdrantClient | None = None
+
+    def _get_client(self) -> QdrantClient:
+        # The qdrant-client REST default timeout is 5s, which latency spikes
+        # (WSL2 filesystem, concurrent upserts) can exceed — surfacing as a
+        # false "timed out" pipeline failure. Cache one client with a
+        # generous timeout instead of building a fresh 5s one per call.
+        if self._client is None:
+            self._client = QdrantClient(url=settings.qdrant_url, timeout=60.0)
+        return self._client
 
     async def upsert(self, points: list[PointStruct]) -> None:
         if not points:
             return
 
         def _write() -> None:
-            client = self._client()
+            client = self._get_client()
             client.upsert(collection_name=settings.qdrant_collection_name, points=points)
 
         await asyncio.to_thread(_write)
@@ -123,7 +132,7 @@ class QdrantVectorStore:
             )
 
         def _query() -> list[ScoredChunk]:
-            client = self._client()
+            client = self._get_client()
             response = client.search(
                 collection_name=settings.qdrant_collection_name,
                 query_vector=query_vector,
@@ -145,7 +154,7 @@ class QdrantVectorStore:
         def _delete() -> None:
             from qdrant_client.http.models import PointIdsList
 
-            client = self._client()
+            client = self._get_client()
             client.delete(
                 collection_name=settings.qdrant_collection_name,
                 points_selector=PointIdsList(points=chunk_ids),

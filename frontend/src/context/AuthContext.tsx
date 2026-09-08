@@ -42,8 +42,12 @@ function setAccessToken(token: string | null) {
 // ── Typed fetch that auto-attaches the Bearer token ──────────────────────────
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    // FormData bodies must NOT get a manual Content-Type — the browser needs
+    // to set `multipart/form-data; boundary=...` itself, otherwise the server
+    // can't parse the multipart body (uploads fail with 422).
+    const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
     const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...(init.headers as Record<string, string> ?? {}),
     }
     if (_accessToken) {

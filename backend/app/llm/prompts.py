@@ -116,6 +116,53 @@ clearly disproportionate.
 """,
 }
 
+
+def all_clauses_prompt(entries: list[tuple[str, str]]) -> str:
+    """Batched clause detection: one call covering every clause type.
+
+    `entries` is a list of (clause_type, description) pairs supplied by the
+    pipeline from the clause-type catalog.
+    """
+    lines = "\n".join(f"- {name}: {description}" for name, description in entries)
+    return f"""
+Detect every clause of the listed types that is present in the document.
+
+Clause types to check:
+{lines}
+
+Return clauses: one entry per distinct clause instance found, each with:
+- clause_type: one of the listed types,
+- chunk_id: the id of the chunk containing it,
+- extracted_text: the verbatim text span,
+- summary: a one-sentence plain-language summary,
+- confidence: 0.0-1.0.
+A type with no matching clause must simply have no entries — absence is a
+valid, important result. Never fabricate an instance or stretch a weak match
+to a type.
+"""
+
+
+def risk_judgments_prompt(checks: list[tuple[str, str]]) -> str:
+    """Batched risk judgment: one call covering every LLM-judgment check.
+
+    `checks` is a list of (risk_type, check description) pairs.
+    """
+    lines = "\n\n".join(f"### {name}\n{description.strip()}" for name, description in checks)
+    return f"""
+Judge each of the following risk checks against the document context.
+
+{lines}
+
+Return judgments: exactly one entry per check, each with:
+- risk_type: the check name exactly as listed,
+- flagged: true only if the risk is clearly present in the context,
+- severity per the rubric below (only meaningful when flagged),
+- description: a neutral description of what was found (empty if not flagged),
+- recommendation: a neutral, "Consider ..." style suggestion (null if not flagged),
+- confidence: 0.0-1.0.
+Do not flag on speculation — only on what the context supports.
+"""
+
 SUMMARY_PROMPT = """
 Write the Smart Summary for this document.
 

@@ -46,6 +46,86 @@ async def test_full_ai_pipeline_reaches_analysis_ready(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_pipeline_llm_call_budget_is_batched(client, monkeypatch):
+    """Clause + risk detection must stay batched: one call each, not per-type.
+
+    Free-tier LLM quotas (Gemini: 20 requests/day/model) make the old
+    ~15-calls-per-document design unusable — this guards the regression.
+    """
+    async def _noop(points):
+        return None
+
+    monkeypatch.setattr("app.pipelines.ingestion.pipeline._upsert_qdrant_points", _noop)
+
+    from app.llm import get_llm_provider
+
+    reg = await register_user(client, email="budget@example.com", org_name="Budget Org")
+    token = reg.json()["access_token"]
+    resp = await client.post(
+        "/api/v1/documents/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files=[("files", ("agreement.txt", SAMPLE_CONTRACT, "text/plain"))],
+    )
+    assert resp.status_code == 202, resp.text
+
+    provider = get_llm_provider()
+    # 1 metadata + 1 clauses + 1 entities + 1 obligations + 1 risk judgments
+    # + 1 summary, plus at most 1 rule-triggered auto-renewal confirmation.
+    assert provider.call_count <= 7, provider.calls
+    assert "ClauseDetectionResult" not in provider.calls  # old per-type schema
+
+
+@pytest.mark.asyncio
+async def test_successful_rerun_clears_stale_error_detail(client, monkeypatch):
+    """A doc that errors then succeeds must not keep the old error text."""
+    async def _noop(points):
+        return None
+
+    monkeypatch.setattr("app.pipelines.ingestion.pipeline._upsert_qdrant_points", _noop)
+
+    from uuid import UUID
+
+    from app.models.models import DocumentStatus
+    from app.pipelines.status import transition_document_status
+
+    from tests.conftest import TestSessionLocal
+
+    reg = await register_user(client, email="stale@example.com", org_name="Stale Org")
+    token = reg.json()["access_token"]
+    org_id = UUID(reg.json()["user"]["org_id"])
+    resp = await client.post(
+        "/api/v1/documents/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files=[("files", ("agreement.txt", SAMPLE_CONTRACT, "text/plain"))],
+    )
+    doc_id = UUID(resp.json()["documents"][0]["document_id"])
+
+    # Simulate a failed run leaving an error detail, then a clean rerun.
+    async with TestSessionLocal() as session:
+        await transition_document_status(
+            session,
+            organization_id=org_id,
+            document_id=doc_id,
+            status=DocumentStatus.ERROR,
+            status_detail="AI pipeline: 429 Too Many Requests",
+        )
+        await transition_document_status(
+            session,
+            organization_id=org_id,
+            document_id=doc_id,
+            status=DocumentStatus.ANALYSIS_READY,
+        )
+
+    get_resp = await client.get(
+        f"/api/v1/documents/{doc_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    doc = get_resp.json()
+    assert doc["status"] == "analysis_ready"
+    assert doc["status_detail"] is None
+
+
+@pytest.mark.asyncio
 async def test_clause_detection_and_absence(client, monkeypatch):
     async def _noop(points):
         return None

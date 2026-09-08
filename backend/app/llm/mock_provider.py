@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.llm.base import ModelTier, StructuredResult
 from app.pipelines.ai.clause_types import CLAUSE_KEYWORDS
 from app.pipelines.ai.extraction import (
+    AllClausesResult,
     ClauseDetectionResult,
     ClauseInstance,
     EntityInstance,
@@ -26,8 +27,11 @@ from app.pipelines.ai.extraction import (
     PartyInfo,
     QaAnswerResult,
     QaCitation,
+    RiskJudgmentListResult,
     RiskJudgmentResult,
     SummaryExtraction,
+    TypedClauseInstance,
+    TypedRiskJudgment,
 )
 
 _CHUNK_HEADER = re.compile(r"^\[([0-9a-fA-F-]{36}) \| page (\d+)\]$", re.MULTILINE)
@@ -106,12 +110,16 @@ class MockLLMProvider:
         result: BaseModel
         if schema is MetadataExtraction:
             result = self._metadata(chunks, prompt)
+        elif schema is AllClausesResult:
+            result = self._all_clauses(chunks)
         elif schema is ClauseDetectionResult:
             result = self._clause_detection(chunks, prompt)
         elif schema is EntityListResult:
             result = self._entities(chunks)
         elif schema is ObligationListResult:
             result = self._obligations(chunks)
+        elif schema is RiskJudgmentListResult:
+            result = self._risk_judgments(chunks)
         elif schema is RiskJudgmentResult:
             result = self._risk_judgment(chunks, prompt)
         elif schema is SummaryExtraction:
@@ -206,6 +214,40 @@ class MockLLMProvider:
                 return clause_type
         return "other"
 
+    def _instances_for(
+        self, chunks: list[_Chunk], clause_type: str
+    ) -> list[ClauseInstance]:
+        keywords = CLAUSE_KEYWORDS.get(clause_type, [])
+        instances: list[ClauseInstance] = []
+        for chunk in chunks:
+            if not chunk.chunk_id:
+                continue
+            for sentence in self._sentences(chunk.text):
+                lower = sentence.lower()
+                if any(kw in lower for kw in keywords):
+                    instances.append(
+                        ClauseInstance(
+                            chunk_id=chunk.chunk_id,
+                            extracted_text=sentence,
+                            summary=(
+                                f"{clause_type.replace('_', ' ').title()} "
+                                f"provision: {sentence[:120]}"
+                            ),
+                            confidence=0.85,
+                        )
+                    )
+        return instances
+
+    def _all_clauses(self, chunks: list[_Chunk]) -> AllClausesResult:
+        """Batched heuristic: run the keyword match for every clause type."""
+        clauses: list[TypedClauseInstance] = []
+        for clause_type in CLAUSE_KEYWORDS:
+            for instance in self._instances_for(chunks, clause_type):
+                clauses.append(
+                    TypedClauseInstance(clause_type=clause_type, **instance.model_dump())
+                )
+        return AllClausesResult(clauses=clauses)
+
     def _metadata(self, chunks: list[_Chunk], prompt: str) -> MetadataExtraction:
         full_text = "\n".join(c.text for c in chunks)
         parties: list[PartyInfo] = []
@@ -236,25 +278,7 @@ class MockLLMProvider:
 
     def _clause_detection(self, chunks: list[_Chunk], prompt: str) -> ClauseDetectionResult:
         clause_type = self._clause_type(prompt)
-        keywords = CLAUSE_KEYWORDS.get(clause_type, [])
-        instances: list[ClauseInstance] = []
-        for chunk in chunks:
-            if not chunk.chunk_id:
-                continue
-            for sentence in self._sentences(chunk.text):
-                lower = sentence.lower()
-                if any(kw in lower for kw in keywords):
-                    instances.append(
-                        ClauseInstance(
-                            chunk_id=chunk.chunk_id,
-                            extracted_text=sentence,
-                            summary=(
-                                f"{clause_type.replace('_', ' ').title()} "
-                                f"provision: {sentence[:120]}"
-                            ),
-                            confidence=0.85,
-                        )
-                    )
+        instances = self._instances_for(chunks, clause_type)
         return ClauseDetectionResult(found=bool(instances), instances=instances)
 
     def _entities(self, chunks: list[_Chunk]) -> EntityListResult:
@@ -336,6 +360,30 @@ class MockLLMProvider:
                     )
                 )
         return ObligationListResult(obligations=obligations)
+
+    _RISK_CHECK_PROMPTS = {
+        "unlimited_liability": "Judge whether the document exposes a party to unlimited liability.",
+        "ambiguous_language": "Judge whether vague or undefined terms create enforceability risk.",
+        "high_penalty": "Judge whether penalty or default amounts are disproportionate.",
+    }
+
+    def _risk_judgments(self, chunks: list[_Chunk]) -> RiskJudgmentListResult:
+        """Batched heuristic: one judgment per check, reusing the single-check
+        heuristics (they dispatch on prompt text)."""
+        judgments: list[TypedRiskJudgment] = []
+        for risk_type, prompt in self._RISK_CHECK_PROMPTS.items():
+            single = self._risk_judgment(chunks, prompt)
+            judgments.append(
+                TypedRiskJudgment(
+                    risk_type=risk_type,
+                    flagged=single.flagged,
+                    severity=single.severity,
+                    description=single.description,
+                    recommendation=single.recommendation,
+                    confidence=single.confidence,
+                )
+            )
+        return RiskJudgmentListResult(judgments=judgments)
 
     def _risk_judgment(self, chunks: list[_Chunk], prompt: str) -> RiskJudgmentResult:
         prompt_lower = prompt.lower()

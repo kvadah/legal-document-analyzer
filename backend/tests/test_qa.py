@@ -27,6 +27,9 @@ async def _upload(client, token):
 
 def _parse_sse(body: str) -> list[tuple[str, dict]]:
     """Parse a text/event-stream body into (event, data) pairs."""
+    # sse-starlette writes \r\n line endings; normalize so event blocks
+    # (blank-line separated) split correctly.
+    body = body.replace("\r\n", "\n")
     events = []
     for block in body.split("\n\n"):
         event_name = None

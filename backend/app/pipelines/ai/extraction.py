@@ -55,6 +55,32 @@ class ClauseDetectionResult(BaseModel):
     instances: list[ClauseInstance] = Field(default_factory=list)
 
 
+# Batched clause detection (one call for all 10 types instead of 10 calls —
+# required to fit LLM request quotas; see pipeline docstring).
+ClauseTypeValueLiteral = Literal[
+    "termination",
+    "confidentiality",
+    "indemnification",
+    "liability",
+    "arbitration",
+    "payment",
+    "ip",
+    "jurisdiction",
+    "renewal",
+    "force_majeure",
+]
+
+
+class TypedClauseInstance(ClauseInstance):
+    clause_type: ClauseTypeValueLiteral
+
+
+class AllClausesResult(BaseModel):
+    """One batched call detecting instances of every clause type."""
+
+    clauses: list[TypedClauseInstance] = Field(default_factory=list)
+
+
 class EntityInstance(BaseModel):
     entity_type: EntityTypeLiteral
     value: str
@@ -93,6 +119,32 @@ class RiskJudgmentResult(BaseModel):
         if v not in ("low", "medium", "high", "critical"):
             return "medium"
         return v
+
+
+# Batched risk judgment (one call for all LLM-judgment risk types).
+LLMRiskTypeLiteral = Literal["unlimited_liability", "ambiguous_language", "high_penalty"]
+
+
+class TypedRiskJudgment(BaseModel):
+    risk_type: LLMRiskTypeLiteral
+    flagged: bool
+    severity: RiskSeverityLiteral = "medium"
+    description: str = ""
+    recommendation: str | None = None
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+    @field_validator("severity")
+    @classmethod
+    def _require_severity(cls, v: str) -> str:
+        if v not in ("low", "medium", "high", "critical"):
+            return "medium"
+        return v
+
+
+class RiskJudgmentListResult(BaseModel):
+    """One batched call judging every LLM-judgment risk type."""
+
+    judgments: list[TypedRiskJudgment] = Field(default_factory=list)
 
 
 class SummaryExtraction(BaseModel):

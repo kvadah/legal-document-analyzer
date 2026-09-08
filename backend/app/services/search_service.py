@@ -15,7 +15,6 @@ top matching snippets per document and deep-link to the matched page.
 from __future__ import annotations
 
 import logging
-import re
 import shlex
 from datetime import datetime
 from typing import Any

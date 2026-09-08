@@ -5,11 +5,13 @@ obligation extraction → risk detection (rules then LLM judgment) → summary �
 scores → store. Status transitions: ingestion_ready → ai_pipeline_processing
 → analysis_ready (or error).
 
-Clause detection runs one call per clause type rather than one batched
-multi-type call: per-type prompts give the model a single absence/presence
-decision to make and keep each extraction tightly grounded, which matters
-more at this stage than round-trip savings; revisit batching once the golden
-eval set from Phase 3's acceptance criteria exists to measure the tradeoff.
+LLM call budget: clause detection and risk judgment are each ONE batched
+call covering all types (10 clause types in one, the LLM-judgment risk
+checks in one), keeping a document at ~6 calls total. The original
+one-call-per-type design was better isolated per decision, but free-tier
+LLM quotas (e.g. Gemini: 20 requests/day/model) make 15+ calls per document
+unworkable — batching is the documented tradeoff (05-ai-pipeline.md §4);
+revisit against the golden eval set when it exists.
 
 Anti-hallucination: every extraction is validated against the cited chunk —
 verbatim spans that do not appear in the referenced chunk text are dropped
@@ -37,7 +39,8 @@ from app.llm.prompts import (
     RISK_JUDGMENT_PROMPTS,
     SEVERITY_RUBRIC,
     SUMMARY_PROMPT,
-    clause_prompt,
+    all_clauses_prompt,
+    risk_judgments_prompt,
 )
 from app.models.models import (
     Chunk,
@@ -56,12 +59,13 @@ from app.models.models import (
     RiskStatus,
     RiskType,
 )
-from app.pipelines.ai.clause_types import CLAUSE_TYPE_DESCRIPTIONS, retrieve_candidates
+from app.pipelines.ai.clause_types import CLAUSE_TYPE_DESCRIPTIONS
 from app.pipelines.ai.extraction import (
-    ClauseDetectionResult,
+    AllClausesResult,
     EntityListResult,
     MetadataExtraction,
     ObligationListResult,
+    RiskJudgmentListResult,
     RiskJudgmentResult,
     SummaryExtraction,
 )
@@ -193,39 +197,39 @@ async def _extract_metadata(
 
 async def _detect_clauses(provider: LLMProvider, chunks: list[Chunk]) -> list[Clause]:
     by_id = _chunk_map(chunks)
+    entries = [(t.value, CLAUSE_TYPE_DESCRIPTIONS[t]) for t in ClauseType]
+    result = await provider.generate_structured(
+        all_clauses_prompt(entries),
+        AllClausesResult,
+        [_format_chunk(c) for c in chunks],
+        "capable",
+        prompt_version=PROMPT_VERSION,
+    )
     clauses: list[Clause] = []
-    for clause_type in ClauseType:
-        description = CLAUSE_TYPE_DESCRIPTIONS[clause_type]
-        candidates = retrieve_candidates(chunks, clause_type)
-        result = await provider.generate_structured(
-            clause_prompt(clause_type.value, description),
-            ClauseDetectionResult,
-            [_format_chunk(c) for c in candidates],
-            "capable",
-            prompt_version=PROMPT_VERSION,
-        )
-        detection = result.typed(ClauseDetectionResult)
-        for instance in detection.instances:
-            chunk = by_id.get(instance.chunk_id)
-            if chunk is None or instance.extracted_text not in (chunk.text or ""):
-                logger.warning(
-                    "ai_pipeline.clause_grounding_failed",
-                    extra={"clause_type": clause_type.value, "chunk_id": instance.chunk_id},
-                )
-                continue
-            clauses.append(
-                Clause(
-                    id=uuid.uuid4(),
-                    document_id=chunk.document_id,
-                    clause_type=clause_type,
-                    extracted_text=instance.extracted_text,
-                    summary=instance.summary,
-                    page_number=chunk.page_number,
-                    paragraph_index=chunk.paragraph_index,
-                    confidence_score=round(instance.confidence, 2),
-                    source_chunk_ids=[chunk.id],
-                )
+    for instance in result.typed(AllClausesResult).clauses:
+        chunk = by_id.get(instance.chunk_id)
+        if chunk is None or instance.extracted_text not in (chunk.text or ""):
+            logger.warning(
+                "ai_pipeline.clause_grounding_failed",
+                extra={
+                    "clause_type": instance.clause_type,
+                    "chunk_id": instance.chunk_id,
+                },
             )
+            continue
+        clauses.append(
+            Clause(
+                id=uuid.uuid4(),
+                document_id=chunk.document_id,
+                clause_type=ClauseType(instance.clause_type),
+                extracted_text=instance.extracted_text,
+                summary=instance.summary,
+                page_number=chunk.page_number,
+                paragraph_index=chunk.paragraph_index,
+                confidence_score=round(instance.confidence, 2),
+                source_chunk_ids=[chunk.id],
+            )
+        )
     return clauses
 
 
@@ -296,23 +300,27 @@ async def _extract_obligations(
 
 
 def _judgment_context(
-    risk_type: RiskType, clauses: list[Clause], chunks: list[Chunk],
-    metadata: MetadataExtraction
+    clauses: list[Clause], chunks: list[Chunk], metadata: MetadataExtraction
 ) -> list[str]:
-    if risk_type == RiskType.UNLIMITED_LIABILITY:
-        related = [c for c in clauses if c.clause_type == ClauseType.LIABILITY]
-    elif risk_type == RiskType.HIGH_PENALTY:
-        payment_types = (ClauseType.PAYMENT, ClauseType.TERMINATION)
-        related = [c for c in clauses if c.clause_type in payment_types]
-    else:
-        related = []
-    context = [c.extracted_text for c in related]
-    if risk_type == RiskType.HIGH_PENALTY and metadata.contract_value is not None:
+    """Combined context for the batched risk-judgment call.
+
+    Union of the material any individual check would have reviewed: liability
+    + payment/termination clause texts, the contract value, and the document
+    opening (where vague-effort language lives).
+    """
+    related_types = (ClauseType.LIABILITY, ClauseType.PAYMENT, ClauseType.TERMINATION)
+    context: list[str] = [c.extracted_text for c in clauses if c.clause_type in related_types]
+    if metadata.contract_value is not None:
         currency = metadata.contract_currency or ""
         context.append(f"Contract value: {metadata.contract_value} {currency}")
-    if not context:
-        context = [chunk.text for chunk in chunks[:5]]
-    return context
+    context.extend(chunk.text for chunk in chunks[:5])
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in context:
+        if item and item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped
 
 
 async def _detect_risks(
@@ -347,25 +355,24 @@ async def _detect_risks(
             )
         )
 
-    for risk_type in _LLM_JUDGMENT_TYPES:
-        prompt = RISK_JUDGMENT_PROMPTS[risk_type.value] + SEVERITY_RUBRIC
-        context = _judgment_context(risk_type, clauses, chunks, metadata)
-        result = await provider.generate_structured(
-            prompt,
-            RiskJudgmentResult,
-            context,
-            "capable",
-            prompt_version=PROMPT_VERSION,
-        )
-        judgment = result.typed(RiskJudgmentResult)
+    checks = [(rt.value, RISK_JUDGMENT_PROMPTS[rt.value]) for rt in _LLM_JUDGMENT_TYPES]
+    context = _judgment_context(clauses, chunks, metadata)
+    result = await provider.generate_structured(
+        risk_judgments_prompt(checks) + SEVERITY_RUBRIC,
+        RiskJudgmentListResult,
+        context,
+        "capable",
+        prompt_version=PROMPT_VERSION,
+    )
+    for judgment in result.typed(RiskJudgmentListResult).judgments:
         if not judgment.flagged or not judgment.description:
             continue
         risks.append(
             Risk(
                 id=uuid.uuid4(),
                 document_id=doc_id,
-                clause_id=_clause_id_for_rule(risk_type, clauses),
-                risk_type=risk_type,
+                clause_id=_clause_id_for_rule(RiskType(judgment.risk_type), clauses),
+                risk_type=RiskType(judgment.risk_type),
                 severity=RiskSeverity(judgment.severity),
                 description=judgment.description,
                 recommendation=judgment.recommendation,

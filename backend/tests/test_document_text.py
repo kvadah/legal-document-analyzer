@@ -1,6 +1,5 @@
 """Tests for the document text endpoint (viewer data source)."""
 import pytest
-from app.models.models import DocumentStatus
 
 from tests.conftest import register_user
 

@@ -60,6 +60,10 @@ class DocumentRepository(BaseRepository[Document]):
         doc.status = status
         if status_detail is not None:
             doc.status_detail = status_detail
+        elif status == DocumentStatus.ANALYSIS_READY:
+            # Terminal success: drop any stale error detail from a previous
+            # failed run (e.g. a 429 that was later retried successfully).
+            doc.status_detail = None
         if page_count is not None:
             doc.page_count = page_count
         if language is not None:

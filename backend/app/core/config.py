@@ -1,5 +1,6 @@
 """Application configuration using Pydantic Settings."""
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -51,12 +52,24 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_fast_model: str = "gpt-4o-mini"
 
+    # Google Gemini (interim provider: LLM + embeddings share one API key)
+    gemini_api_key: str | None = None
+    gemini_llm_model: str = "gemini-3.6-flash"
+    gemini_llm_fast_model: str = "gemini-3.5-flash-lite"
+    # 0 disables thinking (supported on Gemini 2.5-era models only; Gemini 3
+    # models REJECT thinkingBudget=0, so leave unset for them). None omits
+    # thinkingConfig entirely — the default and correct choice for 3.x.
+    gemini_thinking_budget: int | None = None
+    # Minimum seconds between Gemini LLM requests (client-side rate pacing,
+    # shared across all worker jobs in the process). Free-tier keys allow
+    # ~10 requests/minute, so 6s ≈ 10 RPM. 0 disables pacing.
+    gemini_min_request_interval: float = 6.0
+
     # Default provider
     default_llm_provider: str = "anthropic"
     mock_llm: bool = True
 
-    # --- Embeddings (Gemini API) ---
-    gemini_api_key: str | None = None
+    # --- Embeddings (Gemini API — uses gemini_api_key above) ---
     mock_embeddings: bool = True
     embedding_model_name: str = "gemini-embedding-001"
 
@@ -85,6 +98,17 @@ class Settings(BaseSettings):
     rag_similarity_threshold: float = 0.0
     rag_history_turns: int = 3
     rag_conversation_ttl_seconds: int = 24 * 60 * 60
+
+    @field_validator("gemini_thinking_budget", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: object) -> object:
+        # docker-compose interpolates unset vars to "" — treat as unset.
+        return None if v == "" else v
+
+    @field_validator("gemini_min_request_interval", mode="before")
+    @classmethod
+    def _empty_interval_to_default(cls, v: object) -> object:
+        return 6.0 if v == "" else v
 
     @property
     def max_upload_bytes(self) -> int:

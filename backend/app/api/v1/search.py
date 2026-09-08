@@ -37,7 +37,7 @@ async def ask_document(
     # Pre-check access/status before streaming starts so org-scoping and
     # not-ready errors surface as proper 4xx JSON instead of a broken stream.
     doc = await get_document(session, current_user=current_user, document_id=document_id)
-    await qa_service.verify_askable(doc.status)
+    qa_service.verify_askable(doc.status)
 
     generator = qa_service.ask(
         session,
