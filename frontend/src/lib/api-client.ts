@@ -486,6 +486,89 @@ export async function apiAskStream(
     if (buffer.trim()) dispatch(buffer)
 }
 
+// ── Compare (clause comparison) ──────────────────────────────────────────────
+
+export type ComparisonStatus = 'pending' | 'processing' | 'completed' | 'error'
+export type ClauseChangeStatus = 'added' | 'removed' | 'modified' | 'unchanged'
+export type ParagraphChangeStatus = 'added' | 'removed' | 'modified'
+
+export interface WordDiffOp {
+    op: 'equal' | 'replace' | 'insert' | 'delete'
+    text_a?: string | null
+    text_b?: string | null
+}
+
+export interface ClauseDiffEntry {
+    clause_type: string
+    status: ClauseChangeStatus
+    text_a?: string | null
+    text_b?: string | null
+    word_diff?: WordDiffOp[] | null
+    page_a?: number | null
+    page_b?: number | null
+    summary_a?: string | null
+    summary_b?: string | null
+    confidence_a?: number | null
+    confidence_b?: number | null
+}
+
+export interface ParagraphDiffEntry {
+    status: ParagraphChangeStatus
+    text_a?: string | null
+    text_b?: string | null
+    word_diff?: WordDiffOp[] | null
+    page_a?: number | null
+    page_b?: number | null
+}
+
+export interface ComparisonCounts {
+    added: number
+    removed: number
+    modified: number
+    unchanged: number
+    other_changes: number
+}
+
+export interface ComparisonDocument {
+    id: string
+    filename: string
+    document_type: string
+}
+
+export interface ComparisonOut {
+    id: string
+    document_id_a: string
+    document_id_b: string
+    document_a: ComparisonDocument
+    document_b: ComparisonDocument
+    status: ComparisonStatus
+    error?: string | null
+    clauses: ClauseDiffEntry[]
+    other_changes: ParagraphDiffEntry[]
+    counts?: ComparisonCounts | null
+    created_at: string
+    updated_at: string
+}
+
+export interface ComparisonCreatedResponse {
+    comparison_id: string
+    status: ComparisonStatus
+}
+
+export async function apiCreateComparison(
+    documentIdA: string,
+    documentIdB: string,
+): Promise<ComparisonCreatedResponse> {
+    return apiPost<ComparisonCreatedResponse>('/compare', {
+        document_id_a: documentIdA,
+        document_id_b: documentIdB,
+    })
+}
+
+export async function apiGetComparison(comparisonId: string): Promise<ComparisonOut> {
+    return apiGet<ComparisonOut>(`/compare/${comparisonId}`)
+}
+
 // ── Export ───────────────────────────────────────────────────────────────────
 
 export type ExportFormat = 'pdf' | 'docx' | 'json'

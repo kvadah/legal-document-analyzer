@@ -2,7 +2,7 @@
 
 A multi-tenant contract intelligence platform: upload legal documents, run them through an OCR/parsing/embedding pipeline, AI-based clause & risk analysis, review results in a rich analysis UI with citation-grounded navigation, search across the whole corpus, ask grounded questions with cited answers, and export analysis reports.
 
-**Status: Phases 0–5 complete (full MVP scope per `00-overview.md` §8).**
+**Status: Phases 0–6 complete (MVP + Clause Comparison).**
 
 ## ✅ Completed Phases
 
@@ -64,6 +64,14 @@ A multi-tenant contract intelligence platform: upload legal documents, run them 
 - **Healthchecks hardened** (`docker-compose.yml`):
   - Qdrant + API use `127.0.0.1` instead of `localhost` — the current `qdrant/qdrant:latest` and `python:3.12-slim` images ship glibc 2.41 (Debian trixie), where `localhost` resolution is flaky under Docker Desktop/WSL2; bash's `/dev/tcp/localhost:6333` fails with a misleading "No such file or directory" and permanently marks the container unhealthy, which blocks every service that `depends_on` it
   - Postgres: `retries: 30` + `start_period: 120s` so crash recovery after an unclean shutdown (which can take minutes on WSL2's filesystem) isn't mistaken for a dead database
+
+### Phase 6 — Clause Comparison
+- **Comparison backend** (`POST /compare` → `202` + async job, `GET /compare/{id}`): works on any two `analysis_ready` documents in the org — not just linked versions. Requires reviewer/admin to trigger (per the RBAC matrix); results readable by any org member
+- **Clause alignment** (`app/pipelines/compare/diff_engine.py`, pure stdlib `difflib`): clauses are aligned by clause type first, then by greedy textual-similarity pairing when multiple instances of a type exist on either side
+- **Classification + word-level diff**: each aligned pair is classified **added / removed / modified / unchanged** (whitespace-only differences count as unchanged); modified pairs carry a structured word-level diff (`equal`/`replace`/`insert`/`delete` segments) computed server-side and shipped as data — no client-side diffing needed
+- **"Other Changes"**: paragraph-level diff of content *outside* the 10 tracked clause types; clause-covered paragraphs (and their closest counterparts on the other side) are excluded so clause changes aren't reported twice
+- **Compare page** (`/compare`): two searchable document pickers (pre-populated via `?a=`/`?b=` deep links), polling while the async job runs, clickable summary chips that double as status filters, clause-type filter, side-by-side ⇄ unified view toggle, color-coded word-level highlights (red removals / green additions), per-side page links that deep-link into the Analysis viewer, and the collapsible "Other Changes" section
+- `comparisons` table (already in the initial migration) stores the structured diff result; job lifecycle `pending → processing → completed | error`
 
 ## 🚀 Quick Start
 
@@ -135,16 +143,17 @@ legal-document-analyzer/
 ├── legal-doc-analyzer/
 │   ├── backend/
 │   │   ├── app/
-│   │   │   ├── api/               # API routes (health, v1: auth, documents, analysis)
+│   │   │   ├── api/               # API routes (health, v1: auth, documents,
+│   │   │   │                      #   analysis, search, compare)
 │   │   │   ├── core/              # Config, security, deps
 │   │   │   ├── db/                # Database session, base, Qdrant init
 │   │   │   ├── llm/               # LLM provider abstraction (Claude/OpenAI/Mock)
 │   │   │   ├── models/            # SQLAlchemy models
-│   │   │   ├── pipelines/         # Ingestion + AI pipelines
+│   │   │   ├── pipelines/         # Ingestion + AI + comparison pipelines
 │   │   │   ├── providers/         # Embedding providers
 │   │   │   ├── repositories/      # Org-scoped data access layer
 │   │   │   ├── schemas/           # Pydantic schemas
-│   │   │   ├── services/          # Business logic (search, Q&A, export, vector store)
+│   │   │   ├── services/          # Business logic (search, Q&A, export, compare)
 │   │   │   ├── workers/           # Background jobs (Arq)
 │   │   │   └── main.py            # App factory
 │   │   ├── alembic/               # Database migrations
@@ -153,7 +162,8 @@ legal-document-analyzer/
 │   └── frontend/
 │       ├── src/
 │       │   ├── app/               # Next.js App Router (landing, auth, contracts,
-│       │   │                      #   upload, search, reports, documents/[id] analysis)
+│       │   │                      #   upload, search, compare, reports,
+│       │   │                      #   documents/[id] analysis)
 │       │   ├── components/
 │       │   │   ├── analysis/      # Analysis view components (viewer, tabs,
 │       │   │   │                  #   CitationLink, ScoreCards, QaTab, ExportMenu)
@@ -184,16 +194,15 @@ All tables use UUID primary keys, `created_at`/`updated_at` timestamps, FK relat
 10. `document_summaries` — AI-generated summaries
 11. `comments` — User comments (annotations, reports, comparisons arrive in later phases)
 
-## 📝 Next Steps (Phase 6 — Clause Comparison)
+## 📝 Next Steps (Phase 7 — Cross-Document Features)
 
-- Comparison backend (`POST /compare`, async diff job) + Compare page
-- Clause alignment by type + word-level diff with added/removed/modified/unchanged classification
-- Version history (Phase 7) integrates with the Compare feature
+- Entity extraction UI wiring, document relationships (`08-feature-spec-collaboration.md` §2)
+- Cross-document search + cross-document RAG Q&A (§3)
+- Version history (§4) + version-aware upload + "compare to previous" integration with the Compare page
 
 See [13-roadmap-build-order.md](13-roadmap-build-order.md) for the full phase plan
-(Phases 6–11: comparison, cross-document features, reports, collaboration,
-administration, deployment hardening). The MVP checkpoint is complete —
-demo and gather feedback before continuing.
+(Phases 7–11: cross-document features, reports, collaboration,
+administration, deployment hardening).
 
 ## 🐛 Troubleshooting
 

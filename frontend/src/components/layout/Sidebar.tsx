@@ -7,6 +7,7 @@ import {
     FileText,
     Upload,
     Search,
+    FileDiff,
     BarChart3,
     Settings,
     Menu,
@@ -25,6 +26,7 @@ const NAV_SECTIONS = [
             { href: '/contracts', label: 'Contracts', icon: FileText },
             { href: '/upload', label: 'Upload', icon: Upload },
             { href: '/search', label: 'Search', icon: Search },
+            { href: '/compare', label: 'Compare', icon: FileDiff },
         ],
     },
     {

@@ -32,6 +32,7 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(tmp_path / "storage"))
     monkeypatch.setenv("RUN_INGESTION_INLINE", "true")
     monkeypatch.setenv("RUN_AI_PIPELINE_INLINE", "true")
+    monkeypatch.setenv("RUN_COMPARISON_INLINE", "true")
     monkeypatch.setenv("MOCK_EMBEDDINGS", "true")
     monkeypatch.setenv("MOCK_LLM", "true")
     monkeypatch.setenv("VECTOR_SEARCH_BACKEND", "memory")
@@ -39,6 +40,7 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings.local_storage_path = str(tmp_path / "storage")
     settings.run_ingestion_inline = True
     settings.run_ai_pipeline_inline = True
+    settings.run_comparison_inline = True
     settings.mock_embeddings = True
     settings.mock_llm = True
     settings.vector_search_backend = "memory"
@@ -55,6 +57,7 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def pipeline_test_session(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.pipelines.ingestion.pipeline.AsyncSessionLocal", TestSessionLocal)
     monkeypatch.setattr("app.pipelines.ai.pipeline.AsyncSessionLocal", TestSessionLocal)
+    monkeypatch.setattr("app.pipelines.compare.pipeline.AsyncSessionLocal", TestSessionLocal)
 
 
 @pytest.fixture(autouse=True)
@@ -96,7 +99,9 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
-async def register_user(client, *, org_name="Test Org", email="admin@example.com", password="password123"):
+async def register_user(
+    client, *, org_name="Test Org", email="admin@example.com", password="password123"
+):
     return await client.post(
         "/api/v1/auth/register",
         json={"org_name": org_name, "email": email, "password": password},
