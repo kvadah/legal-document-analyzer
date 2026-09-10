@@ -1,5 +1,6 @@
 """Auth endpoints — POST /api/v1/auth/*"""
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,9 @@ from app.schemas.auth import (
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
+    UserListResponse,
+    UserOut,
+    UserUpdateRequest,
 )
 from app.services import auth_service
 
@@ -151,3 +155,30 @@ async def accept_invite(
     )
     _set_refresh_cookie(response, refresh_token)
     return auth_resp
+
+
+@router.get("/users", response_model=UserListResponse)
+async def list_users(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(require_role("admin"))],
+) -> UserListResponse:
+    """Admin: list all members of the current org (10-frontend-spec.md §8)."""
+    return await auth_service.list_users(session, org_id=UUID(current_user.org_id))
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: UUID,
+    body: UserUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(require_role("admin"))],
+) -> UserOut:
+    """Admin: change a member's role and/or activation status."""
+    return await auth_service.update_user(
+        session,
+        admin_user_id=current_user.id,
+        org_id=UUID(current_user.org_id),
+        user_id=user_id,
+        role=body.role,
+        is_active=body.is_active,
+    )

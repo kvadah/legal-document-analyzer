@@ -26,7 +26,7 @@ from app.db.redis import (
 from app.models.models import User, UserRole
 from app.repositories.org_repo import OrgRepository
 from app.repositories.user_repo import UserRepository
-from app.schemas.auth import AuthResponse, AuthUserOut
+from app.schemas.auth import AuthResponse, AuthUserOut, UserListResponse, UserOut
 
 
 def _build_auth_response(user: User, org_name: str) -> tuple[str, str, AuthResponse]:
@@ -255,3 +255,64 @@ async def accept_invite(
     access_token, refresh_token, resp = _build_auth_response(user, org_name)
     await store_refresh_token(refresh_token, str(user.id))
     return access_token, refresh_token, resp
+
+
+# ── Admin user management (10-frontend-spec.md §8) ───────────────────────────
+
+
+def _user_out(user: User) -> UserOut:
+    return UserOut(
+        id=str(user.id),
+        email=user.email,
+        role=user.role.value,
+        is_active=user.is_active,
+        full_name=user.full_name,
+        last_login_at=user.last_login_at,
+        created_at=user.created_at,
+    )
+
+
+async def list_users(
+    session: AsyncSession,
+    *,
+    org_id: uuid.UUID,
+) -> UserListResponse:
+    """List all members of the org (admin only)."""
+    repo = UserRepository(session, org_id)
+    users, total = await repo.list(limit=500)
+    users.sort(key=lambda u: u.created_at)
+    return UserListResponse(items=[_user_out(user) for user in users], total=total)
+
+
+async def update_user(
+    session: AsyncSession,
+    *,
+    admin_user_id: str,
+    org_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: str | None = None,
+    is_active: bool | None = None,
+) -> UserOut:
+    """Change a member's role and/or activation status (admin only).
+
+    Raises HTTP 400 if an admin tries to modify their own account (prevents
+    accidental self-lockout), HTTP 404 if the user is not in the admin's org.
+    """
+    if user_id == uuid.UUID(admin_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "cannot_modify_self",
+                "message": "You cannot change your own role or status.",
+            },
+        )
+
+    repo = UserRepository(session, org_id)
+    user = await repo.get_by_id(user_id)
+    if role is not None:
+        user.role = UserRole(role)
+    if is_active is not None:
+        user.is_active = is_active
+    await repo.save(user)
+    await session.commit()
+    return _user_out(user)

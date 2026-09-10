@@ -56,6 +56,8 @@ export interface DocumentOut {
     language?: string | null
     file_hash?: string | null
     possible_duplicate_of?: string | null
+    contract_score?: number | null
+    ai_confidence_score?: number | null
     created_at: string
     updated_at: string
 }
@@ -484,6 +486,43 @@ export async function apiAskStream(
         }
     }
     if (buffer.trim()) dispatch(buffer)
+}
+
+// ── Admin: user management ───────────────────────────────────────────────────
+
+export type UserRole = 'admin' | 'reviewer' | 'viewer'
+
+export interface OrgUserOut {
+    id: string
+    email: string
+    role: UserRole
+    is_active: boolean
+    full_name?: string | null
+    last_login_at?: string | null
+    created_at: string
+}
+
+export interface UserListResponse {
+    items: OrgUserOut[]
+    total: number
+}
+
+export async function apiListUsers(): Promise<UserListResponse> {
+    return apiGet<UserListResponse>('/auth/users')
+}
+
+export async function apiUpdateUser(
+    userId: string,
+    changes: { role?: UserRole; is_active?: boolean },
+): Promise<OrgUserOut> {
+    return apiPatch<OrgUserOut>(`/auth/users/${userId}`, changes)
+}
+
+export async function apiInviteUser(
+    email: string,
+    role: Exclude<UserRole, 'admin'>,
+): Promise<{ message: string }> {
+    return apiPost<{ message: string }>('/auth/invite', { email, role })
 }
 
 // ── Compare (clause comparison) ──────────────────────────────────────────────

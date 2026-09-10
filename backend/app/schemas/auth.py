@@ -1,4 +1,7 @@
 """Pydantic schemas for authentication endpoints."""
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -59,3 +62,27 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: AuthUserOut
+
+
+class UserOut(BaseModel):
+    """Org member as shown in the admin users list."""
+
+    id: str
+    email: str
+    role: str
+    is_active: bool
+    full_name: str | None = None
+    last_login_at: datetime | None = None
+    created_at: datetime
+
+
+class UserListResponse(BaseModel):
+    items: list[UserOut]
+    total: int
+
+
+class UserUpdateRequest(BaseModel):
+    """Request body for PATCH /auth/users/{user_id} (admin only)."""
+
+    role: Literal["admin", "reviewer", "viewer"] | None = None
+    is_active: bool | None = None

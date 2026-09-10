@@ -73,6 +73,10 @@ A multi-tenant contract intelligence platform: upload legal documents, run them 
 - **Compare page** (`/compare`): two searchable document pickers (pre-populated via `?a=`/`?b=` deep links), polling while the async job runs, clickable summary chips that double as status filters, clause-type filter, side-by-side ⇄ unified view toggle, color-coded word-level highlights (red removals / green additions), per-side page links that deep-link into the Analysis viewer, and the collapsible "Other Changes" section
 - `comparisons` table (already in the initial migration) stores the structured diff result; job lifecycle `pending → processing → completed | error`
 
+### Administration page (partial Phase 10, pulled forward)
+- **Admin page** (`/admin`, admin role only): **Users tab** — member table (email, role, status, last login, joined) with inline role changes and deactivate/reactivate (optimistic with rollback; admins can't modify their own account), plus an invite form. **Usage tab** — document/analysis/storage/avg-score stat cards, an uploads-over-time chart, and a pipeline-status breakdown. **Settings tab** — org profile and your account (retention/LLM/feature-flag settings remain server-managed until the full Phase 10 pass)
+- **New endpoints**: `GET /auth/users` and `PATCH /auth/users/{id}` (admin only, org-scoped; self-modification blocked with a `cannot_modify_self` error to prevent accidental lockout). Deactivation is enforced at login and token refresh — deactivated members are immediately locked out
+
 ## 🚀 Quick Start
 
 ### Prerequisites
