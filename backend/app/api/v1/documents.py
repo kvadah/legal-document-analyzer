@@ -5,11 +5,11 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_role
 from app.db.redis import get_redis
 from app.db.session import get_session
 from app.pipelines.status import status_channel
@@ -18,6 +18,8 @@ from app.schemas.document import (
     DocumentListResponse,
     DocumentOut,
     DocumentTextResponse,
+    DocumentVersionListResponse,
+    UploadDocumentResult,
     UploadResponse,
 )
 from app.services import document_service
@@ -69,9 +71,38 @@ async def get_document(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> DocumentOut:
     return await document_service.get_document(
+        session, current_user=current_user, document_id=document_id,
+    )
+
+
+@router.post("/{document_id}/versions", response_model=UploadDocumentResult, status_code=202)
+async def upload_document_version(
+    document_id: UUID,
+    # Version upload is a reviewer-level permission
+    # (08-feature-spec-collaboration.md §8).
+    current_user: Annotated[CurrentUser, Depends(require_role("reviewer", "admin"))],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    file: UploadFile = File(...),
+    change_note: str | None = Form(default=None),
+) -> UploadDocumentResult:
+    """Upload a new version of an existing document (08 §4)."""
+    return await document_service.upload_document_version(
         session,
         current_user=current_user,
-        document_id=document_id,
+        parent_document_id=document_id,
+        file=file,
+        change_note=change_note,
+    )
+
+
+@router.get("/{document_id}/versions", response_model=DocumentVersionListResponse)
+async def list_document_versions(
+    document_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentVersionListResponse:
+    return await document_service.list_document_versions(
+        session, current_user=current_user, document_id=document_id,
     )
 
 

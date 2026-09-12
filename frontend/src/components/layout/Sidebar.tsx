@@ -14,6 +14,7 @@ import {
     X,
     ShieldCheck,
     Plus,
+    MessageCircleQuestion,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { LogoMark } from '@/components/ui/Logo'
@@ -26,6 +27,7 @@ const NAV_SECTIONS = [
             { href: '/contracts', label: 'Contracts', icon: FileText },
             { href: '/upload', label: 'Upload', icon: Upload },
             { href: '/search', label: 'Search', icon: Search },
+            { href: '/ask', label: 'Ask', icon: MessageCircleQuestion },
             { href: '/compare', label: 'Compare', icon: FileDiff },
         ],
     },

@@ -61,11 +61,28 @@ class AskRequest(BaseModel):
     conversation_id: str | None = None
 
 
+class AskScopeFilters(BaseModel):
+    """Optional corpus narrowing for cross-document Q&A (08 §3)."""
+
+    document_ids: list[str] | None = None
+    document_type: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+class AskAllRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    conversation_id: str | None = None
+    filters: AskScopeFilters | None = None
+
+
 class AskCitation(BaseModel):
     index: int
     chunk_id: str
     page_number: int
     quote: str
+    document_id: str | None = None
+    document_name: str | None = None
 
 
 class AskCitationsEvent(BaseModel):

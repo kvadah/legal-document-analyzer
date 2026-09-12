@@ -7,17 +7,20 @@ import uuid
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import CurrentUser
-from app.models.models import Document, DocumentStatus
+from app.models.models import Document, DocumentStatus, DocumentVersion
 from app.repositories.chunk_repo import ChunkRepository
 from app.repositories.document_repo import DocumentRepository
 from app.schemas.document import (
     DocumentOut,
     DocumentPage,
     DocumentTextResponse,
+    DocumentVersionListResponse,
+    DocumentVersionOut,
     PageBlock,
     UploadDocumentResult,
 )
@@ -61,6 +64,7 @@ def _document_to_out(doc: Document, *, possible_duplicate_of: str | None = None)
         ai_confidence_score=(
             float(doc.ai_confidence_score) if doc.ai_confidence_score is not None else None
         ),
+        parent_document_id=str(doc.parent_document_id) if doc.parent_document_id else None,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
     )
@@ -185,6 +189,158 @@ async def get_document(
     repo = DocumentRepository(session, UUID(current_user.org_id))
     doc = await repo.get_by_id(document_id)
     return _document_to_out(doc)
+
+
+def _root_of(doc: Document) -> UUID:
+    """Root of a version chain: the doc itself, or its linked root."""
+    return doc.parent_document_id or doc.id
+
+
+async def _chain_documents(
+    session: AsyncSession, org_id: UUID, root_id: UUID
+) -> list[Document]:
+    stmt = select(Document).where(
+        Document.organization_id == org_id,
+        (Document.id == root_id) | (Document.parent_document_id == root_id),
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def _version_rows(
+    session: AsyncSession, document_ids: list[UUID]
+) -> dict[UUID, DocumentVersion]:
+    if not document_ids:
+        return {}
+    stmt = select(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids))
+    result = await session.execute(stmt)
+    return {row.document_id: row for row in result.scalars().all()}
+
+
+async def upload_document_version(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    parent_document_id: UUID,
+    file: UploadFile,
+    change_note: str | None = None,
+) -> UploadDocumentResult:
+    """Upload a new version of an existing document (08 §4).
+
+    The new version is a distinct Document (own pipeline run and analysis)
+    linked to the chain's root via parent_document_id; prior versions are
+    never overwritten. The content-dedup check is intentionally skipped —
+    the user has explicitly declared this a new version.
+    """
+    org_id = UUID(current_user.org_id)
+    user_id = UUID(current_user.id)
+    repo = DocumentRepository(session, org_id)
+    parent = await repo.get_by_id(parent_document_id)
+    root_id = _root_of(parent)
+
+    data = await file.read()
+    filename = file.filename or "upload.bin"
+    file_type = _validate_upload(filename, file.content_type, len(data))
+    _scan_content(data, file_type)
+
+    chain = await _chain_documents(session, org_id, root_id)
+    rows = await _version_rows(session, [doc.id for doc in chain])
+    if root_id not in rows:
+        root_doc = next(doc for doc in chain if doc.id == root_id)
+        session.add(
+            DocumentVersion(
+                id=uuid.uuid4(),
+                document_id=root_id,
+                version_number=1,
+                storage_path=root_doc.storage_path,
+                uploaded_by=root_doc.uploaded_by,
+                change_note=None,
+            )
+        )
+    # The root counts as v1 even when its row was only just synthesized.
+    next_number = 1 + max([row.version_number for row in rows.values()] + [1])
+
+    document_id = uuid.uuid4()
+    storage_key = build_document_storage_key(
+        current_user.org_id, str(document_id), f"original.{file_type}"
+    )
+    await get_storage().put_bytes(
+        storage_key, data, file.content_type or "application/octet-stream"
+    )
+
+    doc = await repo.create_document(
+        uploaded_by=user_id,
+        filename=filename,
+        file_type=file_type,
+        file_size_bytes=len(data),
+        storage_path=storage_key,
+        file_hash=hashlib.sha256(data).hexdigest(),
+        document_id=document_id,
+    )
+    doc.parent_document_id = root_id
+
+    session.add(
+        DocumentVersion(
+            id=uuid.uuid4(),
+            document_id=doc.id,
+            version_number=next_number,
+            storage_path=storage_key,
+            uploaded_by=user_id,
+            change_note=change_note,
+        )
+    )
+    await session.commit()
+    await enqueue_ingestion(str(doc.id))
+    return UploadDocumentResult(
+        document_id=str(doc.id),
+        filename=filename,
+        status=doc.status.value,
+    )
+
+
+async def list_document_versions(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    document_id: UUID,
+) -> DocumentVersionListResponse:
+    repo = DocumentRepository(session, UUID(current_user.org_id))
+    doc = await repo.get_by_id(document_id)
+    root_id = _root_of(doc)
+
+    chain = await _chain_documents(session, UUID(current_user.org_id), root_id)
+    rows = await _version_rows(session, [d.id for d in chain])
+    known_numbers = [row.version_number for row in rows.values()]
+    fallback_number = max(known_numbers) + 1 if known_numbers else 1
+
+    versions = []
+    for chain_doc in chain:
+        row = rows.get(chain_doc.id)
+        if row is not None:
+            number = row.version_number
+            change_note = row.change_note
+        elif chain_doc.id == root_id:
+            number, change_note = 1, None
+        else:
+            number, change_note = fallback_number, None
+        versions.append(
+            DocumentVersionOut(
+                document_id=str(chain_doc.id),
+                version_number=number,
+                filename=chain_doc.filename,
+                status=chain_doc.status.value,
+                document_type=chain_doc.document_type.value,
+                change_note=change_note,
+                created_at=chain_doc.created_at,
+                is_current=chain_doc.id == document_id,
+            )
+        )
+    versions.sort(key=lambda v: (v.version_number, v.created_at))
+    return DocumentVersionListResponse(
+        document_id=str(document_id),
+        root_document_id=str(root_id),
+        versions=versions,
+    )
 
 
 async def get_document_text(

@@ -32,6 +32,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ── JWT ───────────────────────────────────────────────────────────────────────
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
+# Tolerate small clock steps (NTP corrections, VM clock drift on WSL2)
+# so freshly issued tokens aren't rejected as "not yet valid".
+JWT_LEEWAY_SECONDS = 10
 
 
 def create_access_token(
@@ -63,6 +66,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
         token,
         settings.jwt_secret_key,
         algorithms=[settings.jwt_algorithm],
+        leeway=JWT_LEEWAY_SECONDS,
     )
 
 

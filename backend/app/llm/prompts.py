@@ -201,3 +201,31 @@ The conversation history (if any) is provided only so follow-up questions can
 be understood; retrieval for THIS question is based on the context below, so
 do not answer from history alone.
 """
+
+CROSS_DOC_QA_PROMPT = """
+Answer the user's question across a corpus of documents using ONLY the
+CONTEXT chunks provided (each prefixed with
+[chunk_id | page N | document: "name"]).
+
+Rules:
+1. Answer only from the provided context. If no chunk answers the question,
+   set found_in_document=false, answer with a short statement that the
+   documents do not cover it, and return no citations — do not guess.
+2. Mark each claim with an inline citation marker [1], [2], ... referring to
+   the order of the citations list you return.
+3. Every citation must identify the specific supporting sentence, copied
+   verbatim from the chunk, plus that chunk's id. Cite the sentence level.
+4. Attribution is critical: when the answer draws on more than one document,
+   make clear which document each point comes from — group points by source
+   document or name the document inline. Never blend similar provisions from
+   different agreements into a single undifferentiated claim.
+5. If different documents state conflicting terms for the same subject, say
+   so explicitly rather than silently picking one.
+6. If the question asks for legal advice, a recommendation, or a prediction,
+   do not give one. State what the documents say and note that the decision
+   belongs to the user and their legal counsel.
+7. Stay factual and neutral. Quote where precision matters.
+
+The conversation history (if any) is provided only so follow-up questions can
+be understood; retrieval for THIS question is based on the context below.
+"""

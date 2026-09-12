@@ -147,6 +147,10 @@ export default function SearchPage() {
         [query, results],
     )
     const hintDoc = questionHint ? results!.groups[0].document : null
+    const crossDocAskHint = useMemo(
+        () => looksLikeQuestion(query) && !questionHint,
+        [query, questionHint],
+    )
 
     return (
         <AppLayout>
@@ -222,6 +226,24 @@ export default function SearchPage() {
                             That looks like a question — ask it against{' '}
                             <span className="font-semibold">{hintDoc.filename}</span>{' '}
                             for a cited answer instead.
+                        </span>
+                        <span className="font-semibold text-indigo-600 transition-transform group-hover:translate-x-0.5">
+                            Ask →
+                        </span>
+                    </Link>
+                )}
+
+                {/* Cross-document question hint (08 §3) */}
+                {crossDocAskHint && !loading && (
+                    <Link
+                        href={`/ask?q=${encodeURIComponent(query.trim())}`}
+                        className="group flex animate-scale-in items-center gap-3 rounded-xl border border-indigo-200/70 bg-indigo-50/70 px-5 py-3.5 text-[13.5px] text-indigo-800 transition-colors hover:bg-indigo-50"
+                    >
+                        <MessageCircleQuestion size={16} className="shrink-0 text-indigo-500" />
+                        <span className="min-w-0 flex-1">
+                            That looks like a question — ask it across{' '}
+                            <span className="font-semibold">all your documents</span>{' '}
+                            for a cited answer with source attribution.
                         </span>
                         <span className="font-semibold text-indigo-600 transition-transform group-hover:translate-x-0.5">
                             Ask →

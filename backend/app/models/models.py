@@ -173,6 +173,7 @@ class Document(BaseModel):
         Index("ix_documents_uploaded_by", "uploaded_by"),
         Index("ix_documents_status", "status"),
         Index("ix_documents_created_at", "created_at"),
+        Index("ix_documents_parent_document_id", "parent_document_id"),
     )
 
     # Relationships
@@ -233,6 +234,47 @@ class DocumentVersion(BaseModel):
 
     # Relationships
     document: Mapped[Document] = relationship("Document", back_populates="versions")
+
+
+class RelationshipType(str, enum.Enum):
+    """Document relationship type enum (08-feature-spec-collaboration.md §2)."""
+
+    AMENDMENT = "amendment"
+    EXHIBIT = "exhibit"
+    RELATED_AGREEMENT = "related_agreement"
+    SUPERSEDES = "supersedes"
+
+
+class DocumentRelationship(BaseModel):
+    """Relationship between two documents in the same org.
+
+    `created_by` is null for system-inferred suggestions, which must be
+    confirmed by a user before they are treated as established links.
+    """
+
+    __tablename__ = "document_relationships"
+
+    document_id_a: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False
+    )
+    document_id_b: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False
+    )
+    relationship_type: Mapped[RelationshipType] = mapped_column(
+        Enum(RelationshipType, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_document_relationships_a", "document_id_a"),
+        Index("ix_document_relationships_b", "document_id_b"),
+        UniqueConstraint(
+            "document_id_a", "document_id_b", "relationship_type", name="uq_doc_relationship"
+        ),
+    )
 
 
 class Chunk(BaseModel):

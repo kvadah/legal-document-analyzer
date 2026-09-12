@@ -58,6 +58,7 @@ export interface DocumentOut {
     possible_duplicate_of?: string | null
     contract_score?: number | null
     ai_confidence_score?: number | null
+    parent_document_id?: string | null
     created_at: string
     updated_at: string
 }
@@ -78,6 +79,23 @@ export interface UploadDocumentResult {
 
 export interface UploadResponse {
     documents: UploadDocumentResult[]
+}
+
+export interface DocumentVersion {
+    document_id: string
+    version_number: number
+    filename: string
+    status: string
+    document_type: string
+    change_note?: string | null
+    created_at: string
+    is_current: boolean
+}
+
+export interface DocumentVersionList {
+    document_id: string
+    root_document_id: string
+    versions: DocumentVersion[]
 }
 
 export async function apiListDocuments(): Promise<DocumentListResponse> {
@@ -102,6 +120,90 @@ export async function apiUploadDocuments(files: File[]): Promise<UploadResponse>
         throw new Error(err?.detail?.message ?? 'Upload failed')
     }
     return res.json()
+}
+
+export async function apiGetDocumentVersions(
+    documentId: string,
+): Promise<DocumentVersionList> {
+    return apiGet<DocumentVersionList>(`/documents/${documentId}/versions`)
+}
+
+/** Upload a new version of an existing document (08 §4). */
+export async function apiUploadDocumentVersion(
+    parentDocumentId: string,
+    file: File,
+    changeNote?: string,
+): Promise<UploadDocumentResult> {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (changeNote) formData.append('change_note', changeNote)
+    const res = await apiFetch(`/documents/${parentDocumentId}/versions`, {
+        method: 'POST',
+        body: formData,
+    })
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.detail?.message ?? 'Version upload failed')
+    }
+    return res.json()
+}
+
+// ── Document relationships ───────────────────────────────────────────────────
+
+export type RelationshipType = 'amendment' | 'exhibit' | 'related_agreement' | 'supersedes'
+
+export interface RelatedDocument {
+    relationship_id: string
+    direction: 'outgoing' | 'incoming'
+    relationship_type: RelationshipType
+    other_document_id: string
+    other_filename: string
+    other_document_type: string
+    other_status: string
+    suggested: boolean
+    created_at: string
+}
+
+export interface RelationshipListResponse {
+    document_id: string
+    relationships: RelatedDocument[]
+}
+
+export async function apiListRelationships(
+    documentId: string,
+): Promise<RelationshipListResponse> {
+    return apiGet<RelationshipListResponse>(`/documents/${documentId}/relationships`)
+}
+
+export async function apiCreateRelationship(
+    documentId: string,
+    relatedDocumentId: string,
+    relationshipType: RelationshipType,
+): Promise<RelatedDocument> {
+    return apiPost<RelatedDocument>(`/documents/${documentId}/relationships`, {
+        related_document_id: relatedDocumentId,
+        relationship_type: relationshipType,
+    })
+}
+
+export async function apiConfirmRelationship(relationshipId: string): Promise<void> {
+    const res = await apiFetch(`/relationships/${relationshipId}/confirm`, {
+        method: 'POST',
+    })
+    if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.detail?.message ?? 'Confirm failed')
+    }
+}
+
+export async function apiDeleteRelationship(relationshipId: string): Promise<void> {
+    const res = await apiFetch(`/relationships/${relationshipId}`, {
+        method: 'DELETE',
+    })
+    if (!res.ok && res.status !== 204) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.detail?.message ?? 'Remove failed')
+    }
 }
 
 // ── Generic helpers ───────────────────────────────────────────────────────────
@@ -397,6 +499,8 @@ export interface AskCitation {
     chunk_id: string
     page_number: number
     quote: string
+    document_id?: string | null
+    document_name?: string | null
 }
 
 export interface AskHandlers {
@@ -417,21 +521,17 @@ interface AskSsePayload {
 }
 
 /**
- * Stream a grounded answer for a question about one document.
+ * POST `body` as JSON to `path` and dispatch the SSE events it streams back.
  *
  * Uses fetch + ReadableStream instead of EventSource because the access
  * token lives in memory and must be attached as an Authorization header.
  */
-export async function apiAskStream(
-    documentId: string,
-    question: string,
-    conversationId: string | null,
+async function _streamSse(
+    path: string,
+    body: Record<string, unknown>,
     handlers: AskHandlers,
 ): Promise<void> {
-    const body: Record<string, unknown> = { question }
-    if (conversationId) body.conversation_id = conversationId
-
-    const res = await apiFetch(`/documents/${documentId}/ask`, {
+    const res = await apiFetch(path, {
         method: 'POST',
         body: JSON.stringify(body),
     })
@@ -486,6 +586,39 @@ export async function apiAskStream(
         }
     }
     if (buffer.trim()) dispatch(buffer)
+}
+
+/** Stream a grounded answer for a question about one document. */
+export async function apiAskStream(
+    documentId: string,
+    question: string,
+    conversationId: string | null,
+    handlers: AskHandlers,
+): Promise<void> {
+    const body: Record<string, unknown> = { question }
+    if (conversationId) body.conversation_id = conversationId
+    await _streamSse(`/documents/${documentId}/ask`, body, handlers)
+}
+
+/** Scope filters for cross-document Q&A (08 §3). */
+export interface AskScopeFilters {
+    document_ids?: string[] | null
+    document_type?: string | null
+    date_from?: string | null
+    date_to?: string | null
+}
+
+/** Stream a grounded answer for a question across the org corpus. */
+export async function apiAskAllDocumentsStream(
+    question: string,
+    conversationId: string | null,
+    handlers: AskHandlers,
+    filters?: AskScopeFilters | null,
+): Promise<void> {
+    const body: Record<string, unknown> = { question }
+    if (conversationId) body.conversation_id = conversationId
+    if (filters) body.filters = filters
+    await _streamSse('/ask', body, handlers)
 }
 
 // ── Admin: user management ───────────────────────────────────────────────────

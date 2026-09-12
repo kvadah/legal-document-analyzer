@@ -20,10 +20,30 @@ class DocumentOut(BaseModel):
     possible_duplicate_of: str | None = None
     contract_score: float | None = None
     ai_confidence_score: float | None = None
+    parent_document_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class DocumentVersionOut(BaseModel):
+    """One entry in a document's version chain (08 §4)."""
+
+    document_id: str
+    version_number: int
+    filename: str
+    status: str
+    document_type: str
+    change_note: str | None = None
+    created_at: datetime
+    is_current: bool
+
+
+class DocumentVersionListResponse(BaseModel):
+    document_id: str
+    root_document_id: str
+    versions: list[DocumentVersionOut]
 
 
 class DocumentListResponse(BaseModel):

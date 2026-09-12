@@ -34,7 +34,10 @@ from app.pipelines.ai.extraction import (
     TypedRiskJudgment,
 )
 
-_CHUNK_HEADER = re.compile(r"^\[([0-9a-fA-F-]{36}) \| page (\d+)\]$", re.MULTILINE)
+_CHUNK_HEADER = re.compile(
+    r"^\[([0-9a-fA-F-]{36}) \| page (\d+)(?: \| document: \"[^\"]*\")?\]$",
+    re.MULTILINE,
+)
 
 _CAP_PHRASES = [
     "shall not exceed",

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
     UploadCloud,
     FileText,
@@ -10,11 +10,21 @@ import {
     FileWarning,
     CheckCircle2,
     Sparkles,
+    GitBranch,
+    ChevronDown,
 } from 'lucide-react'
 import AppLayout from '@/app/app-layout'
-import { apiUploadDocuments, type UploadDocumentResult } from '@/lib/api-client'
+import {
+    apiListDocuments,
+    apiUploadDocuments,
+    apiUploadDocumentVersion,
+    type DocumentOut,
+    type UploadDocumentResult,
+} from '@/lib/api-client'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { DocumentSelect } from '@/components/ui/DocumentPicker'
+import { useAuth } from '@/context/AuthContext'
 import { cn } from '@/lib/cn'
 
 const ACCEPTED = ['.pdf', '.doc', '.docx', '.txt', '.rtf']
@@ -31,20 +41,59 @@ export default function UploadPage() {
     const [loading, setLoading] = useState(false)
     const [isDragging, setIsDragging] = useState(false)
 
-    const handleFiles = useCallback(async (fileList: FileList | File[] | null) => {
-        const files = fileList ? Array.from(fileList) : []
-        if (!files.length) return
-        setError(null)
-        setLoading(true)
-        try {
-            const results = await apiUploadDocuments(files)
-            setUploads(prev => [...results.documents, ...prev])
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Upload failed')
-        } finally {
-            setLoading(false)
+    // Version-aware upload (08 §4) — reviewer/admin only (08 §8)
+    const { user } = useAuth()
+    const canVersion = user?.role === 'admin' || user?.role === 'reviewer'
+    const [versionMode, setVersionMode] = useState(false)
+    const [versionTarget, setVersionTarget] = useState<string | null>(null)
+    const [changeNote, setChangeNote] = useState('')
+    const [documents, setDocuments] = useState<DocumentOut[]>([])
+
+    useEffect(() => {
+        if (!versionMode) return
+        let cancelled = false
+        apiListDocuments()
+            .then(res => {
+                if (!cancelled) setDocuments(res.items)
+            })
+            .catch(() => {
+                /* picker stays empty; upload itself will surface errors */
+            })
+        return () => {
+            cancelled = true
         }
-    }, [])
+    }, [versionMode])
+
+    const handleFiles = useCallback(
+        async (fileList: FileList | File[] | null) => {
+            const files = fileList ? Array.from(fileList) : []
+            if (!files.length) return
+            setError(null)
+            setLoading(true)
+            try {
+                if (versionMode) {
+                    if (!versionTarget) {
+                        setError('Pick the document this file is a new version of.')
+                        return
+                    }
+                    const result = await apiUploadDocumentVersion(
+                        versionTarget,
+                        files[0],
+                        changeNote.trim() || undefined,
+                    )
+                    setUploads(prev => [result, ...prev])
+                } else {
+                    const results = await apiUploadDocuments(files)
+                    setUploads(prev => [...results.documents, ...prev])
+                }
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Upload failed')
+            } finally {
+                setLoading(false)
+            }
+        },
+        [versionMode, versionTarget, changeNote],
+    )
 
     return (
         <AppLayout>
@@ -54,6 +103,75 @@ export default function UploadPage() {
                     title="Upload documents"
                     description="Drop contracts in and let the pipeline handle OCR, parsing, embeddings, and AI analysis."
                 />
+
+                {/* Version-aware upload toggle (08 §4) */}
+                {canVersion && (
+                    <div className="card overflow-hidden">
+                        <button
+                            type="button"
+                            onClick={() => setVersionMode(!versionMode)}
+                            className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-ink-50/60"
+                            aria-expanded={versionMode}
+                        >
+                            <span
+                                className={cn(
+                                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                                    versionMode
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100',
+                                )}
+                            >
+                                <GitBranch size={16} />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[14px] font-semibold text-ink-900">
+                                    Link as a new version
+                                </p>
+                                <p className="mt-0.5 text-[12.5px] text-ink-400">
+                                    {versionMode
+                                        ? 'Single file — uploaded as the next version of the selected document.'
+                                        : 'Uploading a revised contract? Link it to the existing document to build a version history.'}
+                                </p>
+                            </div>
+                            <ChevronDown
+                                size={16}
+                                className={cn(
+                                    'shrink-0 text-ink-300 transition-transform',
+                                    versionMode && 'rotate-180',
+                                )}
+                            />
+                        </button>
+
+                        {versionMode && (
+                            <div className="animate-fade-up space-y-3 border-t border-ink-100 bg-ink-50/40 px-5 py-4">
+                                <div>
+                                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-ink-400">
+                                        New version of
+                                    </p>
+                                    <DocumentSelect
+                                        documents={documents}
+                                        selectedId={versionTarget}
+                                        onSelect={setVersionTarget}
+                                        placeholder="Search existing documents…"
+                                    />
+                                </div>
+                                <div>
+                                    <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-ink-400">
+                                        Change note <span className="normal-case tracking-normal">(optional)</span>
+                                    </p>
+                                    <input
+                                        type="text"
+                                        value={changeNote}
+                                        onChange={e => setChangeNote(e.target.value)}
+                                        maxLength={500}
+                                        placeholder="e.g. Reduced payment fee, shorter payment window"
+                                        className="field w-full"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Dropzone */}
                 <div
@@ -114,7 +232,9 @@ export default function UploadPage() {
                                   : 'Drop files here, or click to browse'}
                         </h3>
                         <p className="mt-2 text-[13.5px] text-ink-500">
-                            PDF, DOCX, TXT and RTF — up to 50&nbsp;MB each, multiple files welcome.
+                            {versionMode
+                                ? 'One file — it becomes the next version of the selected document.'
+                                : 'PDF, DOCX, TXT and RTF — up to 50\u00A0MB each, multiple files welcome.'}
                         </p>
 
                         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
@@ -132,7 +252,7 @@ export default function UploadPage() {
                         <input
                             ref={inputRef}
                             type="file"
-                            multiple
+                            multiple={!versionMode}
                             accept={ACCEPTED.join(',')}
                             className="hidden"
                             onChange={e => {
@@ -178,9 +298,26 @@ export default function UploadPage() {
                                             {upload.filename}
                                         </p>
                                         {upload.possible_duplicate_of ? (
-                                            <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-gold-700">
+                                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-gold-700">
                                                 <Copy size={11} />
                                                 Possible duplicate of an existing document
+                                                {canVersion && (
+                                                    <>
+                                                        {' —'}
+                                                        <button
+                                                            type="button"
+                                                            className="font-semibold underline underline-offset-2 hover:text-gold-800"
+                                                            onClick={() => {
+                                                                setVersionMode(true)
+                                                                setVersionTarget(
+                                                                    upload.possible_duplicate_of ?? null,
+                                                                )
+                                                            }}
+                                                        >
+                                                            link it as a new version instead
+                                                        </button>
+                                                    </>
+                                                )}
                                             </p>
                                         ) : (
                                             <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-ink-400">

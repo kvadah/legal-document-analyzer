@@ -78,6 +78,7 @@ from app.pipelines.ai.scoring import (
 from app.pipelines.status import transition_document_status
 from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.chunk_repo import ChunkRepository
+from app.services.relationship_service import infer_relationship_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,8 @@ async def _run_stages(session: AsyncSession, doc: Document) -> None:
         document_id=doc_id,
         status=DocumentStatus.ANALYSIS_READY,
     )
+
+    await infer_relationship_suggestions(session, doc)
 
 
 def _format_chunk(chunk: Chunk) -> str:

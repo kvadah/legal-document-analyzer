@@ -7,12 +7,13 @@
  */
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams, useParams } from 'next/navigation'
+import { useRouter, useSearchParams, useParams } from 'next/navigation'
 import {
     AlertCircle,
     ArrowLeft,
     ChevronRight,
     FileWarning,
+    GitCompare,
     Loader2,
     RefreshCw,
     ShieldAlert,
@@ -24,6 +25,7 @@ import {
     apiGetClauses,
     apiGetDocument,
     apiGetDocumentText,
+    apiGetDocumentVersions,
     apiGetEntities,
     apiGetObligations,
     apiGetRisks,
@@ -33,6 +35,7 @@ import {
     type ClauseListResponse,
     type DocumentOut,
     type DocumentTextResponse,
+    type DocumentVersionList,
     type EntityListResponse,
     type ObligationListResponse,
     type RiskListResponse,
@@ -48,6 +51,7 @@ import ObligationsTab from '@/components/analysis/ObligationsTab'
 import EntitiesTab from '@/components/analysis/EntitiesTab'
 import QaTab from '@/components/analysis/QaTab'
 import ExportMenu from '@/components/analysis/ExportMenu'
+import RelatedDocuments from '@/components/analysis/RelatedDocuments'
 import { contractScoreTone } from '@/components/analysis/ScoreCards'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -96,6 +100,7 @@ function PageSkeleton() {
 function AnalysisView() {
     const params = useParams<{ id: string }>()
     const documentId = params.id
+    const router = useRouter()
     const searchParams = useSearchParams()
     const initialPage = Number(searchParams.get('page')) || null
     const initialTab = searchParams.get('tab') as TabKey | null
@@ -111,6 +116,8 @@ function AnalysisView() {
     const [analysis, setAnalysis] = useState<AnalysisData | null>(null)
     const [analysisLoading, setAnalysisLoading] = useState(false)
     const [analysisError, setAnalysisError] = useState<string | null>(null)
+
+    const [versions, setVersions] = useState<DocumentVersionList | null>(null)
 
     const [activeTab, setActiveTab] = useState<TabKey>(
         initialTab === 'qa' ||
@@ -150,6 +157,34 @@ function AnalysisView() {
     useEffect(() => {
         void loadDocument()
     }, [loadDocument])
+
+    // Version chain (08 §4) — cheap fetch; drives the selector + compare link
+    useEffect(() => {
+        let cancelled = false
+        apiGetDocumentVersions(documentId)
+            .then(res => {
+                if (!cancelled) setVersions(res)
+            })
+            .catch(() => {
+                if (!cancelled) setVersions(null)
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [documentId])
+
+    const currentVersion =
+        versions?.versions.find(v => v.is_current) ?? null
+    const previousVersion =
+        currentVersion != null
+            ? (versions?.versions.find(
+                  v => v.version_number === currentVersion.version_number - 1,
+              ) ?? null)
+            : null
+    const canCompareToPrevious =
+        previousVersion != null &&
+        previousVersion.status === 'analysis_ready' &&
+        doc?.status === 'analysis_ready'
 
     const busy =
         doc != null && doc.status !== 'analysis_ready' && doc.status !== 'error'
@@ -366,6 +401,46 @@ function AnalysisView() {
                                 <StatusBadge status={doc.status} />
                             </p>
                         </div>
+
+                        {/* Version selector + compare-to-previous (08 §4) */}
+                        {versions != null && versions.versions.length > 1 && (
+                            <div className="flex shrink-0 items-center gap-2">
+                                <label className="relative">
+                                    <span className="sr-only">Document version</span>
+                                    <select
+                                        value={documentId}
+                                        onChange={e => {
+                                            if (e.target.value !== documentId) {
+                                                router.push(`/documents/${e.target.value}`)
+                                            }
+                                        }}
+                                        className="cursor-pointer appearance-none rounded-xl border border-ink-200 bg-white py-2 pl-9 pr-8 text-[12.5px] font-semibold text-ink-700 shadow-soft outline-none transition-colors hover:border-primary/40 focus:ring-2 focus:ring-primary/30"
+                                    >
+                                        {versions.versions.map(v => (
+                                            <option key={v.document_id} value={v.document_id}>
+                                                v{v.version_number}
+                                                {v.is_current ? ' (current)' : ''}
+                                                {v.change_note ? ` — ${v.change_note}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <GitCompare
+                                        size={13}
+                                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400"
+                                    />
+                                </label>
+                                {canCompareToPrevious && previousVersion && (
+                                    <Link
+                                        href={`/compare?a=${previousVersion.document_id}&b=${documentId}`}
+                                        className="btn-secondary px-3.5 py-2 text-[12.5px]"
+                                        title={`Compare v${previousVersion.version_number} against v${currentVersion?.version_number}`}
+                                    >
+                                        <GitCompare size={13} />
+                                        Compare to v{previousVersion.version_number}
+                                    </Link>
+                                )}
+                            </div>
+                        )}
 
                         {analysis && (
                             <div className="flex items-center gap-2">
@@ -645,6 +720,9 @@ function AnalysisView() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Related documents (08 §2) */}
+                                <RelatedDocuments documentId={documentId} />
 
                                 {/* Inline AI disclaimer (layout-level one is
                                     always visible too — 11-security §8) */}
