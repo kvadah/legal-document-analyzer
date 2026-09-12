@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.pipelines.ai.pipeline import run_ai_pipeline
 from app.pipelines.compare.pipeline import run_comparison_pipeline
 from app.pipelines.ingestion.pipeline import run_ingestion_pipeline
+from app.pipelines.reports.pipeline import run_report_pipeline
 
 _arq_pool = None
 
@@ -54,6 +55,14 @@ async def enqueue_comparison(comparison_id: str) -> None:
     await pool.enqueue_job("process_comparison", comparison_id)
 
 
+async def enqueue_report(report_id: str) -> None:
+    if settings.run_report_inline:
+        await run_report_pipeline(report_id)
+        return
+    pool = await get_arq_pool()
+    await pool.enqueue_job("process_report", report_id)
+
+
 async def process_ingestion(ctx, document_id: str) -> None:  # noqa: ARG001
     await run_ingestion_pipeline(document_id)
 
@@ -64,3 +73,7 @@ async def process_ai_pipeline(ctx, document_id: str) -> None:  # noqa: ARG001
 
 async def process_comparison(ctx, comparison_id: str) -> None:  # noqa: ARG001
     await run_comparison_pipeline(comparison_id)
+
+
+async def process_report(ctx, report_id: str) -> None:  # noqa: ARG001
+    await run_report_pipeline(report_id)

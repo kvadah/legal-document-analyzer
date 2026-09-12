@@ -189,8 +189,10 @@ services:
       - api
     networks:
       - legal-doc-network
-    volumes:
-      - ./frontend:/app
+    # NOTE: no bind mount here. `next start` serves the prebuilt .next baked
+    # into the image; mounting ./frontend over /app would shadow it with the
+    # host's (possibly stale) build. Rebuild with `docker compose build
+    # frontend` after frontend source changes.
 
 volumes:
   postgres_data:

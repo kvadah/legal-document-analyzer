@@ -770,3 +770,60 @@ export function downloadBlob(blob: Blob, filename: string): void {
     anchor.remove()
     URL.revokeObjectURL(url)
 }
+
+// ── Reports ──────────────────────────────────────────────────────────────────
+
+export type ReportType = 'portfolio_risk' | 'obligation_calendar'
+export type ReportStatus = 'pending' | 'processing' | 'completed' | 'error'
+export type ReportFormat = 'json' | 'xlsx' | 'pdf' | 'docx'
+
+export interface ReportOut {
+    report_id: string
+    report_type: ReportType
+    status: ReportStatus
+    export_format: ReportFormat
+    document_ids: string[] | null
+    created_at: string
+    completed_at: string | null
+    error: string | null
+    generated_by: string | null
+}
+
+export interface ReportListResponse {
+    reports: ReportOut[]
+    total: number
+}
+
+export async function apiCreateReport(
+    reportType: ReportType,
+    exportFormat: ReportFormat,
+    documentIds?: string[],
+): Promise<{ report_id: string; status: ReportStatus }> {
+    return apiPost<{ report_id: string; status: ReportStatus }>('/reports', {
+        report_type: reportType,
+        export_format: exportFormat,
+        ...(documentIds && documentIds.length > 0 ? { document_ids: documentIds } : {}),
+    })
+}
+
+export async function apiListReports(): Promise<ReportListResponse> {
+    return apiGet<ReportListResponse>('/reports?limit=50')
+}
+
+export async function apiGetReport(reportId: string): Promise<ReportOut> {
+    return apiGet<ReportOut>(`/reports/${reportId}`)
+}
+
+export async function apiDownloadReport(
+    reportId: string,
+): Promise<{ blob: Blob; filename: string }> {
+    const res = await apiFetch(`/reports/${reportId}/download`)
+    if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.detail?.message ?? 'Report download failed')
+    }
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') ?? ''
+    const match = disposition.match(/filename="?([^";]+)"?/)
+    return { blob, filename: match?.[1] ?? `report-${reportId}` }
+}

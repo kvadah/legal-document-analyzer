@@ -70,6 +70,13 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 - Analysis reports as **PDF**, **DOCX**, or **JSON**, each carrying the persistent AI disclaimer
 - Download directly from the Analysis view header
 
+### Reports
+- **Portfolio Risk Report**: risk counts by severity and type, contract score distribution, average score, and a critical-risk focus list across the whole portfolio or a selected document subset
+- **Obligation Calendar Report**: every obligation across the portfolio, bucketed into overdue / due soon / upcoming / no deadline for compliance tracking
+- Async generation via the worker queue (`POST /reports` → 202, poll `GET /reports/{id}`), with results stored in object storage and downloaded through the authenticated API
+- Export formats: **XLSX** (multi-sheet workbook), **JSON**, **PDF**, **DOCX** — all carrying the AI disclaimer
+- Reports page: live portfolio dashboard plus a generate flow (type / scope / format) and a generated-reports table with status polling and download
+
 ### Administration
 - Member management: invite, role changes, deactivate/reactivate — with self-lockout prevention
 - Usage dashboard: document, analysis, and storage stats, upload trends, pipeline health
@@ -195,7 +202,7 @@ pnpm lint
 pnpm test:e2e      # end-to-end (playwright)
 ```
 
-The test suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, and versioning.
+The test suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, versioning, and report generation.
 
 ---
 
@@ -265,11 +272,9 @@ All tables use UUID primary keys, `created_at`/`updated_at` timestamps, foreign 
 - Clause comparison with word-level diffs
 - Document relationships (with inference suggestions) and versioning
 - Export to PDF / DOCX / JSON
+- Reports: portfolio risk + obligation calendar, XLSX/JSON/PDF/DOCX, async generation
 - Administration: user management, usage dashboard
 - Portfolio dashboard
-
-### In Development
-- **Reports** — server-generated portfolio risk reports and obligation calendar reports (background job generation, stored outputs); Excel export format
 
 ### Planned
 - **Collaboration** — threaded review comments (document- and page-scoped, with resolution workflow) and text annotations with configurable highlight colors rendered as viewer overlays
@@ -301,6 +306,9 @@ Current `qdrant` and `python:3.12-slim` images ship glibc 2.41, where `localhost
 
 ### Postgres takes minutes to start ("automatic recovery in progress")
 This follows an unclean shutdown (killing Docker Desktop, hard reboot). Postgres crash recovery is slow on the WSL2 filesystem; the healthcheck allows 120s for it. Shut down cleanly to avoid it: `docker compose down` rather than Ctrl-C or quitting Docker Desktop mid-write.
+
+### Frontend changes not showing up
+The frontend container serves the `.next` build baked into its image — there is no bind mount, so edits on the host have no effect until you rebuild: `docker compose build frontend && docker compose up -d frontend`. After a rebuild, hard-refresh the browser (Ctrl+Shift+R) so cached JS chunks aren't reused.
 
 ### Every rebuild re-downloads dependencies
 The backend Dockerfiles install dependencies from `pyproject.toml` *before* copying source, with a BuildKit pip cache mount — code-only changes rebuild in seconds. Never move `COPY . .` above the dependency-install layer.

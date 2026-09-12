@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import FieldCondition, Filter, MatchValue, PointStruct
+from qdrant_client.http.models import (
+    FieldCondition,
+    Filter,
+    MatchAny,
+    MatchValue,
+    PointStruct,
+)
 
 from app.core.config import settings
 
@@ -126,23 +132,39 @@ class QdrantVectorStore:
         conditions = [
             FieldCondition(key="organization_id", match=MatchValue(value=organization_id))
         ]
-        if document_ids is not None:
+        if document_ids:
+            # MatchAny matches any of the given values. MatchValue has no
+            # multi-value support ("any" kwarg) — it 500s on construction.
             conditions.append(
-                FieldCondition(key="document_id", match=MatchValue(any=document_ids))
+                FieldCondition(key="document_id", match=MatchAny(any=document_ids))
             )
+        elif document_ids is not None:
+            # Explicit empty scope: nothing can match.
+            return []
 
         def _query() -> list[ScoredChunk]:
             client = self._get_client()
-            response = client.search(
-                collection_name=settings.qdrant_collection_name,
-                query_vector=query_vector,
-                query_filter=Filter(must=conditions),
-                limit=limit,
-                with_payload=True,
-            )
+            # qdrant-client 1.12+ replaced `search` with `query_points`
+            # (removed outright in newer releases — e.g. 1.19).
+            if hasattr(client, "query_points"):
+                points = client.query_points(
+                    collection_name=settings.qdrant_collection_name,
+                    query=query_vector,
+                    query_filter=Filter(must=conditions),
+                    limit=limit,
+                    with_payload=True,
+                ).points
+            else:  # qdrant-client < 1.12
+                points = client.search(
+                    collection_name=settings.qdrant_collection_name,
+                    query_vector=query_vector,
+                    query_filter=Filter(must=conditions),
+                    limit=limit,
+                    with_payload=True,
+                )
             return [
                 ScoredChunk(chunk_id=str(hit.id), score=hit.score, payload=hit.payload or {})
-                for hit in response
+                for hit in points
             ]
 
         return await asyncio.to_thread(_query)

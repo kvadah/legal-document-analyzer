@@ -370,6 +370,113 @@ def render_docx(outline: list[tuple[str, str]]) -> bytes:
     return buffer.getvalue()
 
 
+# ── XLSX renderer (stdlib zipfile + SpreadsheetML) ────────────────────────────
+
+
+def _col_letter(index: int) -> str:
+    """1-based column index → spreadsheet column letter (A, B, …, AA, …)."""
+    letters = ""
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(ord("A") + remainder) + letters
+    return letters
+
+
+def render_xlsx(sheets: list[tuple[str, list[list[str]]]]) -> bytes:
+    """Minimal valid .xlsx with one sheet per entry.
+
+    Each sheet is a list of rows; each row a list of cell values (rendered
+    as inline strings — literal text, never interpreted as formulas).
+    The first row of a sheet is styled bold for headers.
+    """
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    content_overrides = []
+    workbook_sheets = []
+    sheet_rels = []
+    rendered_sheets = []
+    for i, (name, rows) in enumerate(sheets, start=1):
+        row_xml = []
+        for r, row in enumerate(rows, start=1):
+            cells = []
+            for c, value in enumerate(row, start=1):
+                if value == "":
+                    continue
+                style = ' s="1"' if r == 1 else ""
+                cells.append(
+                    f'<c r="{_col_letter(c)}{r}" t="inlineStr"{style}>'
+                    f"<is><t>{_xml_escape(str(value))}</t></is></c>"
+                )
+            if cells:
+                row_xml.append(f'<row r="{r}">' + "".join(cells) + "</row>")
+        sheet_xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<worksheet xmlns="{ns}"><sheetData>{"".join(row_xml)}</sheetData></worksheet>'
+        )
+        escaped_name = _xml_escape(name[:31])  # Excel sheet-name limit
+        content_overrides.append(
+            f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        )
+        workbook_sheets.append(f'<sheet name="{escaped_name}" sheetId="{i}" r:id="rId{i}"/>')
+        sheet_rels.append(
+            f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>'
+        )
+        rendered_sheets.append(sheet_xml)
+
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+        + "".join(content_overrides)
+        + "</Types>"
+    )
+    root_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    )
+    workbook_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        f'<sheets>{"".join(workbook_sheets)}</sheets></workbook>'
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(sheet_rels)
+        + "</Relationships>"
+    )
+    # xf 0: default font; xf 1: bold font (headers)
+    styles_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
+        '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+        '<fills count="2"><fill><patternFill patternType="none"/></fill>'
+        '<fill><patternFill patternType="gray125"/></fill></fills>'
+        '<borders count="1"><border/></borders>'
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+        '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+        '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+        "</styleSheet>"
+    )
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("_rels/.rels", root_rels)
+        archive.writestr("xl/workbook.xml", workbook_xml)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        archive.writestr("xl/styles.xml", styles_xml)
+        for i, sheet_xml in enumerate(rendered_sheets, start=1):
+            archive.writestr(f"xl/worksheets/sheet{i}.xml", sheet_xml)
+    return buffer.getvalue()
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
     Loader2,
@@ -11,6 +11,10 @@ import {
     ArrowRight,
     TrendingUp,
     PieChart as PieIcon,
+    Download,
+    CheckCircle2,
+    XCircle,
+    FileDown,
 } from 'lucide-react'
 import {
     ResponsiveContainer,
@@ -25,9 +29,21 @@ import {
     Tooltip,
 } from 'recharts'
 import AppLayout from '@/app/app-layout'
-import { apiListDocuments, type DocumentOut } from '@/lib/api-client'
+import { useAuth } from '@/context/AuthContext'
+import {
+    apiCreateReport,
+    apiDownloadReport,
+    apiListDocuments,
+    apiListReports,
+    downloadBlob,
+    type DocumentOut,
+    type ReportFormat,
+    type ReportOut,
+    type ReportType,
+} from '@/lib/api-client'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { DocumentMultiSelect } from '@/components/ui/DocumentPicker'
 import { statusMeta } from '@/lib/format'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -36,6 +52,33 @@ const STATUS_COLORS: Record<string, string> = {
     'In pipeline': '#6366F1',
     Error: '#F43F5E',
 }
+
+const REPORT_FORMATS: ReportFormat[] = ['json', 'xlsx', 'pdf', 'docx']
+
+const REPORT_TYPES: {
+    type: ReportType
+    icon: typeof ShieldAlert
+    title: string
+    description: string
+    accent: string
+}[] = [
+    {
+        type: 'portfolio_risk',
+        icon: ShieldAlert,
+        title: 'Portfolio Risk Report',
+        description:
+            'A consolidated view of every flagged risk, ranked by severity, across the analysed documents — with contract score distribution and critical-risk focus list.',
+        accent: 'from-rose-500 to-orange-400',
+    },
+    {
+        type: 'obligation_calendar',
+        icon: CalendarClock,
+        title: 'Obligation Calendar',
+        description:
+            'Every payment date, notice period, and renewal deadline across the portfolio, bucketed into overdue, due soon, and upcoming for compliance tracking.',
+        accent: 'from-gold-400 to-gold-600',
+    },
+]
 
 function groupByDay(docs: DocumentOut[]) {
     const byDay = new Map<string, number>()
@@ -78,24 +121,109 @@ function ChartTooltip({
     )
 }
 
+function reportStatusBadge(status: ReportOut['status']) {
+    if (status === 'completed')
+        return (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11.5px] font-semibold text-emerald-700">
+                <CheckCircle2 size={12} /> Completed
+            </span>
+        )
+    if (status === 'error')
+        return (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-[11.5px] font-semibold text-rose-700">
+                <XCircle size={12} /> Error
+            </span>
+        )
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-[11.5px] font-semibold text-indigo-700">
+            <Loader2 size={12} className="animate-spin" />
+            {status === 'processing' ? 'Processing' : 'Pending'}
+        </span>
+    )
+}
+
+function formatDate(iso: string | null) {
+    if (!iso) return '—'
+    return new Date(iso).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    })
+}
+
 export default function ReportsPage() {
+    const { user } = useAuth()
     const [documents, setDocuments] = useState<DocumentOut[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
+    // Report generation + list state
+    const [scopeIds, setScopeIds] = useState<string[]>([])
+    const [formats, setFormats] = useState<Record<ReportType, ReportFormat>>({
+        portfolio_risk: 'xlsx',
+        obligation_calendar: 'xlsx',
+    })
+    const [generating, setGenerating] = useState<ReportType | null>(null)
+    const [generateError, setGenerateError] = useState<string | null>(null)
+    const [reports, setReports] = useState<ReportOut[] | null>(null)
+    const [reportsError, setReportsError] = useState<string | null>(null)
+    const [downloading, setDownloading] = useState<string | null>(null)
+
+    const canGenerate = user?.role === 'admin' || user?.role === 'reviewer'
+    const mountedRef = useRef(true)
+
+    const refreshReports = useCallback(async () => {
+        try {
+            const data = await apiListReports()
+            if (mountedRef.current) {
+                setReports(data.reports)
+                setReportsError(null)
+            }
+        } catch (err) {
+            if (mountedRef.current)
+                setReportsError(
+                    err instanceof Error ? err.message : 'Failed to load reports',
+                )
+        }
+    }, [])
+
     useEffect(() => {
+        mountedRef.current = true
         async function load() {
             try {
                 const data = await apiListDocuments()
-                setDocuments(data.items)
+                if (mountedRef.current) setDocuments(data.items)
             } catch (err) {
-                setError(err instanceof Error ? err.message : 'Failed to load documents')
+                if (mountedRef.current)
+                    setError(
+                        err instanceof Error ? err.message : 'Failed to load documents',
+                    )
             } finally {
-                setLoading(false)
+                if (mountedRef.current) setLoading(false)
             }
         }
         void load()
-    }, [])
+        void refreshReports()
+        return () => {
+            mountedRef.current = false
+        }
+    }, [refreshReports])
+
+    // Poll while any report is in flight.
+    const hasPending = (reports ?? []).some(
+        r => r.status === 'pending' || r.status === 'processing',
+    )
+    useEffect(() => {
+        if (!hasPending) return
+        const timer = setTimeout(() => void refreshReports(), 2500)
+        return () => clearTimeout(timer)
+    }, [hasPending, refreshReports, reports])
+
+    const analyzedDocs = useMemo(
+        () => documents.filter(doc => doc.status === 'analysis_ready'),
+        [documents],
+    )
 
     const statusData = useMemo(() => {
         const buckets: Record<string, number> = {
@@ -118,24 +246,39 @@ export default function ReportsPage() {
 
     const timeline = useMemo(() => groupByDay(documents), [documents])
 
-    const reportCards = [
-        {
-            icon: ShieldAlert,
-            title: 'Portfolio Risk Report',
-            description:
-                'A consolidated view of every flagged risk, ranked by severity, across all analysed documents.',
-            accent: 'from-rose-500 to-orange-400',
-            cta: 'Export risk report',
-        },
-        {
-            icon: CalendarClock,
-            title: 'Obligation Calendar',
-            description:
-                'Upcoming payment dates, notice periods, and renewal deadlines extracted from your contracts.',
-            accent: 'from-gold-400 to-gold-600',
-            cta: 'Export calendar',
-        },
-    ]
+    async function handleGenerate(type: ReportType) {
+        setGenerating(type)
+        setGenerateError(null)
+        try {
+            await apiCreateReport(type, formats[type], scopeIds)
+            await refreshReports()
+        } catch (err) {
+            setGenerateError(
+                err instanceof Error ? err.message : 'Report generation failed',
+            )
+        } finally {
+            setGenerating(null)
+        }
+    }
+
+    async function handleDownload(report: ReportOut) {
+        setDownloading(report.report_id)
+        try {
+            const { blob, filename } = await apiDownloadReport(report.report_id)
+            downloadBlob(blob, filename)
+        } catch (err) {
+            setReportsError(
+                err instanceof Error ? err.message : 'Report download failed',
+            )
+        } finally {
+            setDownloading(null)
+        }
+    }
+
+    const scopeLabel =
+        scopeIds.length === 0
+            ? `${analyzedDocs.length} analysed document${analyzedDocs.length === 1 ? '' : 's'}`
+            : `${scopeIds.length} selected document${scopeIds.length === 1 ? '' : 's'}`
 
     return (
         <AppLayout>
@@ -310,42 +453,240 @@ export default function ReportsPage() {
                             </div>
                         </div>
 
-                        {/* Report cards */}
-                        <div className="grid gap-5 md:grid-cols-2">
-                            {reportCards.map((report, i) => (
-                                <div
-                                    key={report.title}
-                                    className="card animate-fade-up group relative overflow-hidden p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-lift"
-                                    style={{ animationDelay: `${200 + i * 100}ms` }}
-                                >
-                                    <div
-                                        className={`pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-gradient-to-br ${report.accent} opacity-[0.08] blur-2xl transition-opacity duration-300 group-hover:opacity-[0.18]`}
-                                    />
-                                    <div
-                                        className={`relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lift ${report.accent}`}
-                                    >
-                                        <report.icon size={22} strokeWidth={2} />
-                                    </div>
-                                    <h3 className="mt-5 font-display text-[20px] font-semibold text-ink-900">
-                                        {report.title}
-                                    </h3>
-                                    <p className="mt-2 text-[14px] leading-relaxed text-ink-500">
-                                        {report.description}
+                        {/* Report generation */}
+                        <div className="card animate-fade-up p-6">
+                            <div className="flex flex-wrap items-center justify-between gap-4">
+                                <div>
+                                    <h2 className="font-display text-[18px] font-semibold text-ink-900">
+                                        Generate a report
+                                    </h2>
+                                    <p className="mt-1 text-[13.5px] text-ink-500">
+                                        Reports are generated as a background job and
+                                        appear below when ready.
                                     </p>
-                                    <div className="mt-6 flex items-center justify-between">
-                                        <button
-                                            onClick={() => window.print()}
-                                            className="btn-secondary px-4 py-2.5 text-[13px]"
-                                        >
-                                            <Printer size={14} />
-                                            {report.cta}
-                                        </button>
-                                        <span className="text-[12px] text-ink-400">
-                                            {documents.length} documents in scope
-                                        </span>
-                                    </div>
                                 </div>
-                            ))}
+                                <div className="w-full max-w-[320px]">
+                                    <label className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-wider text-ink-400">
+                                        Scope — {scopeLabel}
+                                    </label>
+                                    <DocumentMultiSelect
+                                        documents={analyzedDocs}
+                                        selectedIds={scopeIds}
+                                        onToggle={id =>
+                                            setScopeIds(prev =>
+                                                prev.includes(id)
+                                                    ? prev.filter(x => x !== id)
+                                                    : [...prev, id],
+                                            )
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            {generateError && (
+                                <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-200/80 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+                                    <AlertCircle size={15} className="shrink-0" />
+                                    {generateError}
+                                </div>
+                            )}
+
+                            <div className="mt-5 grid gap-5 md:grid-cols-2">
+                                {REPORT_TYPES.map(report => (
+                                    <div
+                                        key={report.type}
+                                        className="group relative overflow-hidden rounded-2xl border border-ink-100 p-6 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lift"
+                                    >
+                                        <div
+                                            className={`pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-gradient-to-br ${report.accent} opacity-[0.08] blur-2xl transition-opacity duration-300 group-hover:opacity-[0.18]`}
+                                        />
+                                        <div
+                                            className={`relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-lift ${report.accent}`}
+                                        >
+                                            <report.icon size={20} strokeWidth={2} />
+                                        </div>
+                                        <h3 className="mt-4 font-display text-[18px] font-semibold text-ink-900">
+                                            {report.title}
+                                        </h3>
+                                        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-500">
+                                            {report.description}
+                                        </p>
+                                        <div className="mt-5 flex flex-wrap items-center gap-3">
+                                            <select
+                                                value={formats[report.type]}
+                                                onChange={e =>
+                                                    setFormats(prev => ({
+                                                        ...prev,
+                                                        [report.type]: e.target
+                                                            .value as ReportFormat,
+                                                    }))
+                                                }
+                                                disabled={!canGenerate}
+                                                className="rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-[13px] font-medium text-ink-700 shadow-soft transition-colors hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+                                                aria-label={`Export format for ${report.title}`}
+                                            >
+                                                {REPORT_FORMATS.map(fmt => (
+                                                    <option key={fmt} value={fmt}>
+                                                        {fmt.toUpperCase()}
+                                                        {fmt === 'xlsx' ? ' (Excel)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                onClick={() => handleGenerate(report.type)}
+                                                disabled={
+                                                    !canGenerate ||
+                                                    generating === report.type ||
+                                                    analyzedDocs.length === 0
+                                                }
+                                                className="btn-primary px-4 py-2.5 text-[13px] disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {generating === report.type ? (
+                                                    <>
+                                                        <Loader2
+                                                            size={14}
+                                                            className="animate-spin"
+                                                        />
+                                                        Generating…
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <FileDown size={14} />
+                                                        Generate
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                        {!canGenerate && (
+                                            <p className="mt-3 text-[12px] text-ink-400">
+                                                Your role can view reports but not generate
+                                                them — ask a reviewer or admin.
+                                            </p>
+                                        )}
+                                        {canGenerate && analyzedDocs.length === 0 && (
+                                            <p className="mt-3 text-[12px] text-ink-400">
+                                                No analysed documents yet — reports need
+                                                completed analysis to aggregate.
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Past reports */}
+                        <div className="card animate-fade-up p-6">
+                            <div className="flex items-center justify-between">
+                                <h2 className="font-display text-[18px] font-semibold text-ink-900">
+                                    Generated reports
+                                </h2>
+                                {reports && reports.length > 0 && (
+                                    <span className="text-[12px] text-ink-400">
+                                        {reports.length} total
+                                    </span>
+                                )}
+                            </div>
+
+                            {reportsError && (
+                                <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-200/80 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+                                    <AlertCircle size={15} className="shrink-0" />
+                                    {reportsError}
+                                </div>
+                            )}
+
+                            {reports === null && !reportsError && (
+                                <div className="flex items-center justify-center gap-3 py-10 text-[13px] text-ink-400">
+                                    <Loader2 size={15} className="animate-spin" />
+                                    Loading reports…
+                                </div>
+                            )}
+
+                            {reports !== null && reports.length === 0 && (
+                                <div className="py-10 text-center text-[13px] text-ink-400">
+                                    No reports generated yet — pick a report type above to
+                                    create the first one.
+                                </div>
+                            )}
+
+                            {reports !== null && reports.length > 0 && (
+                                <div className="mt-4 overflow-x-auto">
+                                    <table className="w-full min-w-[640px] text-left">
+                                        <thead>
+                                            <tr className="border-b border-ink-100 text-[11px] font-bold uppercase tracking-wider text-ink-400">
+                                                <th className="pb-2.5 pr-4">Report</th>
+                                                <th className="pb-2.5 pr-4">Format</th>
+                                                <th className="pb-2.5 pr-4">Status</th>
+                                                <th className="pb-2.5 pr-4">Created</th>
+                                                <th className="pb-2.5 text-right">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {reports.map(report => (
+                                                <tr
+                                                    key={report.report_id}
+                                                    className="border-b border-ink-50 last:border-0"
+                                                >
+                                                    <td className="py-3 pr-4">
+                                                        <span className="text-[13.5px] font-semibold text-ink-800">
+                                                            {report.report_type ===
+                                                            'portfolio_risk'
+                                                                ? 'Portfolio Risk'
+                                                                : 'Obligation Calendar'}
+                                                        </span>
+                                                        <span className="ml-2 text-[11.5px] text-ink-400">
+                                                            {report.document_ids
+                                                                ? `${report.document_ids.length} doc${report.document_ids.length === 1 ? '' : 's'}`
+                                                                : 'all docs'}
+                                                        </span>
+                                                        {report.error && (
+                                                            <p className="mt-1 max-w-[360px] truncate text-[11.5px] text-rose-600">
+                                                                {report.error}
+                                                            </p>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-3 pr-4 text-[12px] font-semibold uppercase text-ink-500">
+                                                        {report.export_format}
+                                                    </td>
+                                                    <td className="py-3 pr-4">
+                                                        {reportStatusBadge(report.status)}
+                                                    </td>
+                                                    <td className="py-3 pr-4 text-[12.5px] text-ink-500">
+                                                        {formatDate(report.created_at)}
+                                                    </td>
+                                                    <td className="py-3 text-right">
+                                                        {report.status === 'completed' ? (
+                                                            <button
+                                                                onClick={() =>
+                                                                    handleDownload(report)
+                                                                }
+                                                                disabled={
+                                                                    downloading ===
+                                                                    report.report_id
+                                                                }
+                                                                className="btn-secondary px-3.5 py-2 text-[12.5px]"
+                                                            >
+                                                                {downloading ===
+                                                                report.report_id ? (
+                                                                    <Loader2
+                                                                        size={13}
+                                                                        className="animate-spin"
+                                                                    />
+                                                                ) : (
+                                                                    <Download size={13} />
+                                                                )}
+                                                                Download
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-[12px] text-ink-300">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                     </>
                 )}

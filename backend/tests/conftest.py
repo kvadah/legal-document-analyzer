@@ -41,6 +41,7 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings.run_ingestion_inline = True
     settings.run_ai_pipeline_inline = True
     settings.run_comparison_inline = True
+    settings.run_report_inline = True
     settings.mock_embeddings = True
     settings.mock_llm = True
     settings.vector_search_backend = "memory"
@@ -58,6 +59,7 @@ def pipeline_test_session(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.pipelines.ingestion.pipeline.AsyncSessionLocal", TestSessionLocal)
     monkeypatch.setattr("app.pipelines.ai.pipeline.AsyncSessionLocal", TestSessionLocal)
     monkeypatch.setattr("app.pipelines.compare.pipeline.AsyncSessionLocal", TestSessionLocal)
+    monkeypatch.setattr("app.pipelines.reports.pipeline.AsyncSessionLocal", TestSessionLocal)
 
 
 @pytest.fixture(autouse=True)

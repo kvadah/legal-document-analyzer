@@ -630,17 +630,23 @@ class Comparison(BaseModel):
 
 
 class Report(BaseModel):
-    """Report model."""
+    """Report model (08-feature-spec-collaboration.md §7)."""
 
     __tablename__ = "reports"
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False
     )
+    generated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
+    document_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    export_format: Mapped[str] = mapped_column(String(10), default="json", nullable=False)
     data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    download_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_reports_organization_id", "organization_id"),

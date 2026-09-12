@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     run_ingestion_inline: bool = False
     run_ai_pipeline_inline: bool = False
     run_comparison_inline: bool = False
+    run_report_inline: bool = False
     chunk_target_tokens: int = 400
     chunk_max_tokens: int = 800
     chunk_overlap_ratio: float = 0.1

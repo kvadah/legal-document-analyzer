@@ -7,6 +7,7 @@ from app.api.v1.compare import router as compare_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.exports import router as exports_router
 from app.api.v1.relationships import router as relationships_router
+from app.api.v1.reports import router as reports_router
 from app.api.v1.search import router as search_router
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -17,3 +18,4 @@ v1_router.include_router(search_router)
 v1_router.include_router(exports_router)
 v1_router.include_router(compare_router)
 v1_router.include_router(relationships_router)
+v1_router.include_router(reports_router)
