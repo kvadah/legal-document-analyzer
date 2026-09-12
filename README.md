@@ -1,131 +1,186 @@
 # Legal Document Analyzer
 
-A multi-tenant contract intelligence platform: upload legal documents, run them through an OCR/parsing/embedding pipeline, AI-based clause & risk analysis, review results in a rich analysis UI with citation-grounded navigation, search across the whole corpus, ask grounded questions with cited answers, and export analysis reports.
+A multi-tenant contract intelligence platform. Upload legal documents, run them through an OCR → parsing → embedding pipeline, get AI-powered clause and risk analysis with citation-grounded navigation, search across your entire corpus, ask grounded questions with cited answers, compare contract versions word-by-word, and export professional analysis reports.
 
-**Status: Phases 0–6 complete (MVP + Clause Comparison).**
+> **Disclaimer:** This platform provides document analysis tools, not legal advice. All AI-generated output must be reviewed by qualified legal professionals.
 
-## ✅ Completed Phases
+---
 
-### Phase 0 — Project Skeleton
-- FastAPI backend with health checks (`/health/live`, `/health/ready`), Pydantic Settings config, SQLAlchemy + Alembic wired to Postgres
-- Next.js (App Router) frontend with the global layout/nav shell, Tailwind CSS
-- Docker Compose with 7 services (api, worker, frontend, postgres, redis, qdrant, minio), health checks with WSL2-tolerant timeouts, volumes, dependency ordering
-- Full data model: 11 core tables as SQLAlchemy models + initial Alembic migration
-- Idempotent Qdrant collection init
+## Features
 
-### Phase 1 — Auth & Multi-Tenancy
-- `/auth/*` endpoints: register (org + admin), login, refresh, logout, invite, accept-invite
-- JWT auth with httpOnly refresh-token cookie flow (frontend keeps access token in memory only)
-- RBAC roles (admin / reviewer / viewer) and org-scoped repository pattern
-- Frontend: login/register pages, protected route wrapper, auth context with silent session restore
-- Tests: register/login lifecycle, RBAC, and explicit cross-tenant isolation tests
+### Multi-Tenant Security
+- Organization-scoped tenancy with strict data isolation, verified by explicit cross-tenant tests
+- JWT authentication with httpOnly refresh-token cookies (access tokens kept in memory only)
+- Role-based access control — **admin**, **reviewer**, and **viewer** roles enforced across every endpoint
+- Org-scoped repository pattern ensuring no query can leak data across tenants
 
-### Phase 2 — Ingestion Pipeline
-- Multipart upload (single/batch) → object storage (S3/MinIO with local-fs fallback)
-- Content validation, malware/magic-byte sniffing, SHA-256 dedup check
-- OCR integration (PaddleOCR primary, Tesseract fallback) with skip-if-text-layer logic
-- Structural parsing → chunking → embedding generation → Qdrant write
-- Status state machine + Redis pub/sub, SSE status streaming endpoint
-- Frontend Upload page with drag-and-drop, multi-file, live status badges
+### Document Ingestion
+- Multipart single/batch upload with drag-and-drop UI and live status badges
+- Object storage (S3/MinIO) with local-filesystem fallback
+- Content validation, magic-byte sniffing, and SHA-256 deduplication
+- OCR via PaddleOCR (primary) with Tesseract fallback, plus skip-if-text-layer detection for native PDFs
+- Structural parsing → intelligent chunking → embedding generation → vector store indexing
+- Status state machine with Redis pub/sub and server-sent event streaming for live progress
 
-### Phase 3 — AI Pipeline
-- `LLMProvider` abstraction with Claude, OpenAI, and Mock providers (mock used in tests/dev)
-- Full metadata extraction (parties, dates, financial terms, governing law…)
-- Clause detection for all 10 clause types (+ not-found tracking)
-- Risk detection: deterministic rule-based checks + LLM-judgment checks
-- Summary generation, Contract Score + AI Confidence Score (v-scored, with risk deduction breakdown)
-- Mock LLM + mock embeddings so the whole pipeline runs end-to-end in tests without external APIs
+### AI-Powered Analysis
+- Provider-abstracted LLM layer (Gemini, Claude, OpenAI) — switching providers is a config change, not a code change; mock providers let the full pipeline run in tests and keyless dev without external APIs
+- Metadata extraction: parties, dates, financial terms, governing law, and more
+- Clause detection across all tracked clause types, with confidence scores and not-found tracking
+- Risk detection combining deterministic rule-based checks with LLM judgment
+- Contract Score and AI Confidence Score with a transparent risk-deduction breakdown
+- Persistent AI disclaimers and low-confidence warnings throughout the UI
 
-### Phase 4 — Analysis UI (MVP milestone)
-- **Analysis view** (`/documents/{id}`): document viewer pane + tabbed analysis pane
-  - Viewer renders extracted/OCR'd text page-by-page with page navigation, jump-to-page and highlight-span-on-citation-click
-  - **Summary tab**: score rings (Contract Score + AI Confidence) with clickable risk-deduction breakdown, parties, key fields, top-risks preview
-  - **Clauses tab**: per-clause cards with confidence, summary, expandable extracted text, and "Not found" section
-  - **Risks tab**: severity-sorted cards with optimistic triage control (flagged / acknowledged / dismissed) and rollback on failure
-  - **Obligations tab**: timeline-style list with deadline type/date and status badges
-  - **Entities tab**: grouped by type, click-to-navigate to source page
-- **`CitationLink`** shared component (single implementation reused across all tabs — jumps the viewer to the cited page and highlights the anchor text)
-- Low-AI-confidence persistent banner, inline AI disclaimer (plus the layout-level persistent disclaimer)
-- Processing state: live polling while a document is mid-pipeline, error state with retry, "queue analysis" for ingested-but-not-analyzed docs
-- Contracts list rows now deep-link into the Analysis view
-- New backend endpoint: `GET /documents/{id}/text` — extracted/OCR'd text with page/position metadata (api-spec §2), with tests
+### Analysis Workspace
+- Split-pane document viewer with page-by-page navigation
+- **Summary** — score rings, parties, key fields, top risks
+- **Clauses** — per-clause cards with confidence, summary, and expandable source text
+- **Risks** — severity-sorted cards with triage controls (flagged / acknowledged / dismissed)
+- **Obligations** — timeline view with deadlines and status badges
+- **Entities** — grouped by type, click-to-navigate to source occurrences
+- **Q&A** — streaming chat grounded in the document (see below)
+- Shared `CitationLink` component: every citation, in any tab, jumps the viewer to the exact page and highlights the anchor text
 
-### Phase 5 — Search & Basic Export (MVP complete)
-- **Search** (`POST /search`): keyword (SQL-side LIKE narrowing; Postgres tsvector is the noted upgrade path), semantic (query embedded with the ingestion model, searched against the vector store, org-filtered), and **hybrid** (both merged with Reciprocal Rank Fusion) — with `document_type` / date-range / document-id filters
-- **Vector store abstraction** (`QdrantVectorStore` / `InMemoryVectorStore`): production uses Qdrant; tests and keyless dev use an in-process brute-force store (`VECTOR_SEARCH_BACKEND=memory`), mirroring the mock-LLM pattern
-- **Search page** rewritten: mode toggle (Hybrid default), debounced auto-search, results grouped by document with highlighted snippets + keyword/semantic/both source badges, deep-links into the Analysis viewer at the matched page, and an "ask a question instead" heuristic that routes question-shaped queries into document Q&A with the question prefilled
-- **Grounded RAG Q&A** (`POST /documents/{id}/ask`, SSE): question embedded → retrieval scoped to the document and org → similarity threshold check **before** the LLM call (un-groundable questions get "couldn't find" instead of a hallucination) → structured answer with sentence-level citations → grounding validation drops any citation whose quote isn't verbatim in the cited chunk → conversation history in Redis for multi-turn follow-ups
-- **Q&A tab** in the Analysis view: chat UI with streaming answers, inline `[n]` citation markers rendered as clickable references that jump + highlight the document viewer, and source-quote chips; non-advisory framing (asks for legal advice are declined with an explanation)
-- **Export** (`GET /documents/{id}/export?format=pdf|docx|json`): analysis report as PDF (hand-rolled stdlib PDF writer — no new dependencies), DOCX (minimal OOXML package via stdlib zipfile), or JSON — every export carries the persistent AI disclaimer; Export menu in the Analysis header downloads directly
-- Q&A prompts enforce the non-advisory rules from the security spec; mock LLM implements a heuristic grounded-QA path so tests run without API keys
+### Search
+- Keyword, semantic, and hybrid search (merged with Reciprocal Rank Fusion)
+- Results grouped by document with highlighted snippets and source badges
+- Filters: document type, date range, document
+- Deep-links from results directly into the Analysis viewer at the matched page
 
-### Infra hardening (post-Phase 5)
-- **Docker build caching fixed** (backend `Dockerfile` + `Dockerfile.worker`): dependencies are now installed from `pyproject.toml` in a layer *before* source is copied, with a BuildKit pip cache mount — code edits no longer re-download every Python package (previously `COPY . .` preceded `pip install`, invalidating the dependency layer on every code change)
-- **Healthchecks hardened** (`docker-compose.yml`):
-  - Qdrant + API use `127.0.0.1` instead of `localhost` — the current `qdrant/qdrant:latest` and `python:3.12-slim` images ship glibc 2.41 (Debian trixie), where `localhost` resolution is flaky under Docker Desktop/WSL2; bash's `/dev/tcp/localhost:6333` fails with a misleading "No such file or directory" and permanently marks the container unhealthy, which blocks every service that `depends_on` it
-  - Postgres: `retries: 30` + `start_period: 120s` so crash recovery after an unclean shutdown (which can take minutes on WSL2's filesystem) isn't mistaken for a dead database
+### Grounded Q&A
+- **Single-document** (`/documents/{id}/ask`): streaming answers with sentence-level citations, multi-turn conversation history, and grounding validation — citations whose quotes aren't verbatim in the source are dropped
+- **Cross-document** (`/ask`): ask questions across the entire org corpus or a selected subset; answers attribute each point to the document it came from
+- Similarity threshold check *before* the LLM call — un-groundable questions get an honest "couldn't find it" instead of a hallucination
+- Non-advisory framing: requests for legal advice are declined with an explanation
 
-### Phase 6 — Clause Comparison
-- **Comparison backend** (`POST /compare` → `202` + async job, `GET /compare/{id}`): works on any two `analysis_ready` documents in the org — not just linked versions. Requires reviewer/admin to trigger (per the RBAC matrix); results readable by any org member
-- **Clause alignment** (`app/pipelines/compare/diff_engine.py`, pure stdlib `difflib`): clauses are aligned by clause type first, then by greedy textual-similarity pairing when multiple instances of a type exist on either side
-- **Classification + word-level diff**: each aligned pair is classified **added / removed / modified / unchanged** (whitespace-only differences count as unchanged); modified pairs carry a structured word-level diff (`equal`/`replace`/`insert`/`delete` segments) computed server-side and shipped as data — no client-side diffing needed
-- **"Other Changes"**: paragraph-level diff of content *outside* the 10 tracked clause types; clause-covered paragraphs (and their closest counterparts on the other side) are excluded so clause changes aren't reported twice
-- **Compare page** (`/compare`): two searchable document pickers (pre-populated via `?a=`/`?b=` deep links), polling while the async job runs, clickable summary chips that double as status filters, clause-type filter, side-by-side ⇄ unified view toggle, color-coded word-level highlights (red removals / green additions), per-side page links that deep-link into the Analysis viewer, and the collapsible "Other Changes" section
-- `comparisons` table (already in the initial migration) stores the structured diff result; job lifecycle `pending → processing → completed | error`
+### Clause Comparison
+- Compare any two analyzed documents side by side
+- Clauses aligned by type, then by textual similarity; classified as **added / removed / modified / unchanged**
+- Server-computed word-level diffs rendered with color-coded highlights
+- "Other Changes" catches edits outside tracked clause types without double-reporting
+- Async job pipeline with live polling; side-by-side and unified view modes
 
-### Administration page (partial Phase 10, pulled forward)
-- **Admin page** (`/admin`, admin role only): **Users tab** — member table (email, role, status, last login, joined) with inline role changes and deactivate/reactivate (optimistic with rollback; admins can't modify their own account), plus an invite form. **Usage tab** — document/analysis/storage/avg-score stat cards, an uploads-over-time chart, and a pipeline-status breakdown. **Settings tab** — org profile and your account (retention/LLM/feature-flag settings remain server-managed until the full Phase 10 pass)
-- **New endpoints**: `GET /auth/users` and `PATCH /auth/users/{id}` (admin only, org-scoped; self-modification blocked with a `cannot_modify_self` error to prevent accidental lockout). Deactivation is enforced at login and token refresh — deactivated members are immediately locked out
+### Relationships & Versioning
+- Link related documents — amendments, exhibits, related agreements, supersessions
+- System-inferred relationship suggestions (from cross-references in document text) that require user confirmation — never created silently
+- Version-aware upload: new uploads can be registered as versions of existing documents
+- Version history panel with one-click "compare to previous version" routing into the Comparison view
+- Every version retains its own complete analysis history for auditability
 
-## 🚀 Quick Start
+### Export
+- Analysis reports as **PDF**, **DOCX**, or **JSON**, each carrying the persistent AI disclaimer
+- Download directly from the Analysis view header
+
+### Administration
+- Member management: invite, role changes, deactivate/reactivate — with self-lockout prevention
+- Usage dashboard: document, analysis, and storage stats, upload trends, pipeline health
+- Deactivated members are locked out immediately at login and token refresh
+
+### Portfolio Dashboard
+- Portfolio-wide risk, score, and obligation trend views across all contracts
+
+---
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────────────────────────────────────┐
+│  Next.js UI │────▶│                 FastAPI API                  │
+│  (port 3000)│     │  auth · documents · analysis · search · Q&A  │
+└─────────────┘     │  compare · relationships · export · admin    │
+                    └──────┬───────────┬───────────┬───────────────┘
+                           │           │           │
+                    ┌──────▼───┐ ┌─────▼────┐ ┌────▼─────┐
+                    │ Postgres │ │  Redis   │ │  MinIO   │
+                    │  (data)  │ │ queue/   │ │  (files) │
+                    └──────────┘ │ pub-sub  │ └──────────┘
+                                 └─────┬────┘
+                          ┌────────────▼────────────┐
+                          │   Arq Worker            │
+                          │   OCR · parsing · AI    │
+                          │   pipeline · comparison │
+                          └────┬───────────────┬────┘
+                               │               │
+                        ┌──────▼─────┐  ┌──────▼──────┐
+                        │  Qdrant    │  │ LLM Provider │
+                        │ (vectors)  │  │ (embeddings) │
+                        └────────────┘  └─────────────┘
+```
+
+| Service | Technology | Role |
+|---|---|---|
+| API | FastAPI (Python 3.12) | REST API, auth, orchestration |
+| Worker | FastAPI + Arq | Async ingestion & AI pipelines, comparison jobs |
+| Frontend | Next.js (App Router), TypeScript, Tailwind CSS | Analysis workspace, search, admin |
+| Database | PostgreSQL 16 | Documents, analyses, users, relationships |
+| Vector Store | Qdrant | Chunk embeddings for semantic search & RAG |
+| Cache / Queue | Redis 7 | Job queue, pub/sub, Q&A conversation history |
+| Object Storage | MinIO (S3-compatible) | Original files, exports |
+
+---
+
+## Quick Start
 
 ### Prerequisites
 - Docker and Docker Compose
 - Git
 
-### Installation & Startup
+### Start the stack
 
-1. **Start all services:**
-```bash
-chmod +x scripts/startup.sh
-./scripts/startup.sh
-```
-
-Or start manually with Docker Compose:
 ```bash
 cd legal-doc-analyzer
 docker compose up -d --build
 ```
 
-2. **Verify services are healthy:**
+Verify the services are healthy:
+
 ```bash
 curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
+Then register a new organization and admin user at [http://localhost:3000/register](http://localhost:3000/register).
+
 ### Service URLs
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Frontend | http://localhost:3000 | Next.js UI |
-| API | http://localhost:8000 | FastAPI backend |
+| Frontend | http://localhost:3000 | Application UI |
+| API | http://localhost:8000 | REST API |
 | API Docs | http://localhost:8000/docs | Swagger UI |
-| MinIO Console | http://localhost:9001 | Object storage UI |
+| MinIO Console | http://localhost:9001 | Object storage browser |
 | Qdrant | http://localhost:6333/dashboard | Vector DB dashboard |
-| Postgres | localhost:5432 | Database (internal) |
-| Redis | localhost:6379 | Cache/Queue (internal) |
 
 ### Default Credentials
-- **MinIO**: `minioadmin` / `minioadmin`
-- **Database**: `postgres` / `postgres`
-- **App**: register a new org + admin user at http://localhost:3000/register
 
-## 🧪 Testing
+| Service | Credentials |
+|---|---|
+| MinIO | `minioadmin` / `minioadmin` |
+| PostgreSQL | `postgres` / `postgres` (internal) |
+| Application | Self-register at `/register` |
 
-Backend (uses SQLite + mock LLM/embeddings + local storage — no external services needed):
+---
+
+## Configuration
+
+All configuration lives in `.env` at the repository root. Key settings:
+
+| Variable | Purpose |
+|---|---|
+| `DEFAULT_LLM_PROVIDER` | `gemini` \| `anthropic` \| `openai` |
+| `GEMINI_LLM_MODEL` / `GEMINI_LLM_FAST_MODEL` | Gemini model names (use the `gemini-3.x` family — `2.5-*` is unavailable to recent keys) |
+| `MOCK_LLM` / `MOCK_EMBEDDINGS` | Set `true` to run the full pipeline without any API keys |
+| `VECTOR_SEARCH_BACKEND` | `qdrant` (default) or `memory` for keyless dev/tests |
+
+The LLM provider abstraction means switching from the interim Gemini free-tier setup to Claude or OpenAI is a config change only.
+
+---
+
+## Testing
+
+Backend tests run against SQLite with mock LLM/embeddings and local storage — no external services or API keys required:
 
 ```bash
-cd legal-doc-analyzer/backend
+cd backend
 source .venv/bin/activate
 pytest
 ```
@@ -133,152 +188,151 @@ pytest
 Frontend:
 
 ```bash
-cd legal-doc-analyzer/frontend
-pnpm test          # unit (vitest)
+cd frontend
+pnpm test          # unit tests (vitest)
 pnpm type-check    # tsc --noEmit
 pnpm lint
-pnpm test:e2e      # playwright
+pnpm test:e2e      # end-to-end (playwright)
 ```
 
-## 📁 Project Structure
+The test suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, and versioning.
+
+---
+
+## Project Structure
 
 ```
-legal-document-analyzer/
-├── legal-doc-analyzer/
-│   ├── backend/
-│   │   ├── app/
-│   │   │   ├── api/               # API routes (health, v1: auth, documents,
-│   │   │   │                      #   analysis, search, compare)
-│   │   │   ├── core/              # Config, security, deps
-│   │   │   ├── db/                # Database session, base, Qdrant init
-│   │   │   ├── llm/               # LLM provider abstraction (Claude/OpenAI/Mock)
-│   │   │   ├── models/            # SQLAlchemy models
-│   │   │   ├── pipelines/         # Ingestion + AI + comparison pipelines
-│   │   │   ├── providers/         # Embedding providers
-│   │   │   ├── repositories/      # Org-scoped data access layer
-│   │   │   ├── schemas/           # Pydantic schemas
-│   │   │   ├── services/          # Business logic (search, Q&A, export, compare)
-│   │   │   ├── workers/           # Background jobs (Arq)
-│   │   │   └── main.py            # App factory
-│   │   ├── alembic/               # Database migrations
-│   │   ├── tests/                 # Unit/integration tests
-│   │   └── Dockerfile(.worker)
-│   └── frontend/
-│       ├── src/
-│       │   ├── app/               # Next.js App Router (landing, auth, contracts,
-│       │   │                      #   upload, search, compare, reports,
-│       │   │                      #   documents/[id] analysis)
-│       │   ├── components/
-│       │   │   ├── analysis/      # Analysis view components (viewer, tabs,
-│       │   │   │                  #   CitationLink, ScoreCards, QaTab, ExportMenu)
-│       │   │   ├── layout/        # Sidebar, TopBar, Disclaimer
-│       │   │   └── ui/            # Shared UI primitives
-│       │   ├── context/           # AuthContext
-│       │   └── lib/               # api-client, format helpers, analysis metadata
-│       └── package.json
-├── docker-compose.yml             # Service orchestration
-├── .env / .env.example            # Environment variables
-└── scripts/startup.sh             # Development startup script
+legal-doc-analyzer/
+├── backend/
+│   ├── app/
+│   │   ├── api/v1/            # Route handlers (auth, documents, analysis,
+│   │   │                      #   search, compare, relationships, exports)
+│   │   ├── core/              # Config, security, dependencies
+│   │   ├── db/                # Session management, Qdrant init
+│   │   ├── llm/               # LLM provider abstraction + prompts
+│   │   ├── models/            # SQLAlchemy models
+│   │   ├── pipelines/         # Ingestion, AI analysis, comparison
+│   │   ├── providers/         # Embedding providers
+│   │   ├── repositories/      # Org-scoped data access layer
+│   │   ├── schemas/           # Pydantic schemas
+│   │   ├── services/          # Business logic (search, Q&A, export, ...)
+│   │   └── workers/           # Arq background jobs
+│   ├── alembic/               # Database migrations
+│   └── tests/
+├── frontend/
+│   └── src/
+│       ├── app/               # App Router pages (contracts, upload, search,
+│       │                      #   ask, compare, reports, admin, documents/[id])
+│       ├── components/        # Analysis view, layout, shared UI
+│       ├── context/           # Auth context
+│       └── lib/               # API client, formatting helpers
+└── docker-compose.yml
 ```
 
-## 📊 Database Schema
+---
 
-All tables use UUID primary keys, `created_at`/`updated_at` timestamps, FK relationships, and indexes on hot query paths.
+## Database Schema
 
-**Core Tables:**
-1. `organizations` — Tenant scoping
-2. `users` — User accounts with roles
-3. `documents` — Core document metadata (+ scores, status, storage paths)
-4. `document_versions` — Version history
-5. `chunks` — Document text chunks (source of the viewer text)
-6. `clauses` — Detected contract clauses
-7. `risks` — Risk flags with severity + triage status
-8. `entities` — Extracted entities (companies, dates, money…)
-9. `obligations` — Timeline items and obligations
-10. `document_summaries` — AI-generated summaries
-11. `comments` — User comments (annotations, reports, comparisons arrive in later phases)
+All tables use UUID primary keys, `created_at`/`updated_at` timestamps, foreign keys, and indexes on hot query paths. Every tenant-owned table is scoped by `organization_id`.
 
-## 📝 Next Steps (Phase 7 — Cross-Document Features)
+| Table | Purpose |
+|---|---|
+| `organizations` | Tenant scoping |
+| `users` | Accounts, roles, activation state |
+| `documents` | Document metadata, status, scores, storage paths |
+| `document_versions` | Version history |
+| `document_relationships` | Links between related documents |
+| `chunks` | Text chunks backing the viewer and search |
+| `clauses` | Detected clauses with citations |
+| `risks` | Risk flags with severity and triage state |
+| `entities` | Extracted entities (companies, dates, money, ...) |
+| `obligations` | Timeline items and deadlines |
+| `document_summaries` | AI-generated summaries |
+| `comparisons` | Structured comparison results |
+| `comments` | Review comments (schema in place, UI in development) |
 
-- Entity extraction UI wiring, document relationships (`08-feature-spec-collaboration.md` §2)
-- Cross-document search + cross-document RAG Q&A (§3)
-- Version history (§4) + version-aware upload + "compare to previous" integration with the Compare page
+---
 
-See [13-roadmap-build-order.md](13-roadmap-build-order.md) for the full phase plan
-(Phases 7–11: cross-document features, reports, collaboration,
-administration, deployment hardening).
+## Roadmap
 
-## 🐛 Troubleshooting
+### Shipped
+- Multi-tenant auth, RBAC, and data isolation
+- Ingestion pipeline: upload, validation, dedup, OCR, parsing, chunking, embeddings
+- AI analysis: metadata, clauses, risks, scores, summaries
+- Analysis workspace with citation-grounded navigation
+- Hybrid search across the corpus
+- Grounded Q&A — single-document and cross-document
+- Clause comparison with word-level diffs
+- Document relationships (with inference suggestions) and versioning
+- Export to PDF / DOCX / JSON
+- Administration: user management, usage dashboard
+- Portfolio dashboard
+
+### In Development
+- **Reports** — server-generated portfolio risk reports and obligation calendar reports (background job generation, stored outputs); Excel export format
+
+### Planned
+- **Collaboration** — threaded review comments (document- and page-scoped, with resolution workflow) and text annotations with configurable highlight colors rendered as viewer overlays
+- **Administration & hardening** — audit logging across all action types, data retention with soft-delete/hard-delete jobs, API rate limiting, systematic RBAC verification across every endpoint
+- **Deployment hardening** — CI/CD pipeline, structured logging and error tracking, metrics endpoint, backup restore drills, load testing of the ingestion pipeline
+
+See the [build roadmap](../13-roadmap-build-order.md) for the full plan and acceptance criteria.
+
+---
+
+## Troubleshooting
 
 ### Services fail to start
 - Ensure Docker is running: `docker ps`
 - Check port availability: `lsof -i :3000,8000,5432,6379,6333,9000`
-- View logs: `docker compose logs <service_name>`
+- View logs: `docker compose logs <service>`
 
-### api / worker / frontend stuck in "Created"
-They wait (`depends_on: condition: service_healthy`) for postgres/redis/qdrant/minio — and the worker also waits for the API. If any dependency is `unhealthy`, compose never starts them:
+### Containers stuck in "Created"
+The `api`, `worker`, and `frontend` services wait for `postgres`/`redis`/`qdrant`/`minio` to be healthy. If a dependency is `unhealthy`, they never start:
+
 ```bash
-docker ps -a                                  # look for (unhealthy) containers
-docker inspect legal-doc-qdrant --format '{{json .State.Health.Log}}' | python3 -m json.tool
+docker ps -a    # look for (unhealthy) containers
+docker compose up -d <unhealthy-service>   # recreate it
+docker compose up -d                       # then bring up the rest
 ```
-Recreate the unhealthy service (`docker compose up -d <service>`), then `docker compose up -d` again.
 
-### A container is unhealthy but the service inside is fine
-Known issue: current images (qdrant 1.19, python:3.12-slim) ship glibc 2.41, where `localhost` name resolution is unreliable under Docker Desktop/WSL2. Healthchecks in this repo therefore use `127.0.0.1` — don't "fix" them back to `localhost`. If you add new healthchecks, use the IP literal.
+### Container unhealthy but the service inside is fine
+Current `qdrant` and `python:3.12-slim` images ship glibc 2.41, where `localhost` resolution is unreliable under Docker Desktop/WSL2. Healthchecks in this repo use the `127.0.0.1` literal — keep it that way when adding new healthchecks.
 
 ### Postgres takes minutes to start ("automatic recovery in progress")
-This happens after an unclean shutdown (killing Docker Desktop, hard reboot). Postgres runs crash recovery and fsyncs its data directory, which is slow on the WSL2 filesystem. The healthcheck allows 120s for this. Avoid it entirely by shutting down cleanly:
-```bash
-docker compose down    # not Ctrl-C on the logs, not quitting Docker Desktop mid-write
-```
+This follows an unclean shutdown (killing Docker Desktop, hard reboot). Postgres crash recovery is slow on the WSL2 filesystem; the healthcheck allows 120s for it. Shut down cleanly to avoid it: `docker compose down` rather than Ctrl-C or quitting Docker Desktop mid-write.
 
-### Every rebuild re-downloads all dependencies
-The backend Dockerfiles install dependencies from `pyproject.toml` *before* copying source, with a pip BuildKit cache mount — so code-only changes rebuild in seconds. If you see full re-downloads, check that `pyproject.toml` (or `package.json` on the frontend) actually changed; if not, a previous build populated the cache and the next one will be fast. Never move `COPY . .` above the dependency-install layer.
+### Every rebuild re-downloads dependencies
+The backend Dockerfiles install dependencies from `pyproject.toml` *before* copying source, with a BuildKit pip cache mount — code-only changes rebuild in seconds. Never move `COPY . .` above the dependency-install layer.
 
-### Gemini 429 / quota errors in the AI pipeline
-The interim LLM is Google Gemini on a free-tier key. The free-tier quota is **per model, per day** (~20 requests/day/model for generateContent). Two safeguards keep this workable:
-- **Batched pipeline** (~6 LLM calls per document, not ~15): clause detection and risk judgment each run as a single call covering all types.
-- **429-aware retry + pacing** (`app/llm/gemini_provider.py`): retries follow the server's `retryDelay`, and `GEMINI_MIN_REQUEST_INTERVAL` (default 6s) paces requests.
+### Gemini 429 / quota errors
+The interim LLM is Gemini on a free-tier key (~20 requests/day/model). The pipeline batches LLM calls (~6 per document) and the provider retries with server-advertised delays plus a configurable request interval (`GEMINI_MIN_REQUEST_INTERVAL`). If quota is exhausted: wait for the daily reset and retry the document (`POST /documents/{id}/retry`), point `GEMINI_LLM_MODEL` at a model with remaining quota, or switch providers (`DEFAULT_LLM_PROVIDER=anthropic|openai`).
 
-If a document still fails with a "rate limit exceeded" error, the daily quota for that model is spent — options:
-1. Wait for the daily reset (~midnight Pacific) and retry the document (`POST /documents/{id}/retry`).
-2. Point `GEMINI_LLM_MODEL`/`GEMINI_LLM_FAST_MODEL` at a different model with remaining quota (each model has its own daily budget) and restart `api` + `worker`.
-3. Enable billing on the Google project, or switch providers (`DEFAULT_LLM_PROVIDER=anthropic|openai` + the matching key) — the provider abstraction makes this a config change, not a code change.
+### Frontend issues
+- Clear the Next.js cache: `rm -rf frontend/.next`
+- `next build` runs ESLint by default — run `pnpm lint` locally before rebuilding Docker
 
-Note: `gemini-2.5-*` models are unavailable to keys created recently — use the `gemini-3.x` family.
+---
 
-### Database connection errors
-- Check Postgres is healthy: `docker compose ps postgres`
-- Verify DATABASE_URL in .env
-- Check port 5432 is not in use
+## Documentation
 
-### Frontend not loading
-- Clear Next.js cache: `rm -rf legal-doc-analyzer/frontend/.next`
-- Reinstall dependencies: `pnpm install`
-- Check NEXT_PUBLIC_API_BASE_URL in .env matches backend port
+- [Project overview](../00-overview.md) — product scope and MVP definition
+- [Architecture](../01-architecture.md) — system design
+- [Tech stack](../02-tech-stack.md) — technology choices
+- [Data model](../03-data-model.md) — schema specification
+- [Ingestion pipeline](../04-ingestion-pipeline.md) — upload → OCR → chunking → embeddings
+- [AI pipeline](../05-ai-pipeline.md) — extraction, clause/risk detection, scoring
+- [Analysis features](../06-feature-spec-analysis.md) — analysis workspace specification
+- [Comparison & search](../07-feature-spec-comparison-search.md) — diff engine, search, RAG Q&A
+- [Collaboration features](../08-feature-spec-collaboration.md) — relationships, versioning, comments, annotations
+- [API specification](../09-api-spec.md) — endpoint reference
+- [Frontend specification](../10-frontend-spec.md) — UI specification
+- [Security & compliance](../11-security-compliance.md) — RBAC, tenancy, disclaimers
+- [Deployment](../12-deployment-infra.md) — infrastructure guide
+- [Build roadmap](../13-roadmap-build-order.md) — sequencing and acceptance criteria
 
-### Frontend build fails on lint errors
-`next build` runs ESLint by default — unused variables and `any` types are errors. Run `pnpm lint` locally before rebuilding Docker.
+---
 
-## 📚 Documentation
+## License
 
-- [00-overview.md](00-overview.md) — Project overview & MVP scope
-- [01-architecture.md](01-architecture.md) — System architecture
-- [03-data-model.md](03-data-model.md) — Data model specification
-- [04-ingestion-pipeline.md](04-ingestion-pipeline.md) — Ingestion pipeline spec
-- [05-ai-pipeline.md](05-ai-pipeline.md) — AI pipeline spec
-- [06-feature-spec-analysis.md](06-feature-spec-analysis.md) — Analysis feature spec
-- [07-feature-spec-comparison-search.md](07-feature-spec-comparison-search.md) — Search, RAG Q&A, comparison spec
-- [09-api-spec.md](09-api-spec.md) — API specification
-- [10-frontend-spec.md](10-frontend-spec.md) — Frontend specification
-- [11-security-compliance.md](11-security-compliance.md) — Security & compliance
-- [12-deployment-infra.md](12-deployment-infra.md) — Deployment guide
-- [13-roadmap-build-order.md](13-roadmap-build-order.md) — Build roadmap
-
-## 📄 License
-
-Proprietary — See LICENSE file
-
-## 🤝 Contributing
-
-This is an internal project. Follow the roadmap in [13-roadmap-build-order.md](13-roadmap-build-order.md) for sequencing.
+Proprietary — see LICENSE file.
