@@ -50,6 +50,7 @@ import RisksTab from '@/components/analysis/RisksTab'
 import ObligationsTab from '@/components/analysis/ObligationsTab'
 import EntitiesTab from '@/components/analysis/EntitiesTab'
 import QaTab from '@/components/analysis/QaTab'
+import CommentsTab from '@/components/analysis/CommentsTab'
 import ExportMenu from '@/components/analysis/ExportMenu'
 import RelatedDocuments from '@/components/analysis/RelatedDocuments'
 import { contractScoreTone } from '@/components/analysis/ScoreCards'
@@ -76,7 +77,7 @@ const TEXT_AVAILABLE_STATUSES = [
 
 const LOW_CONFIDENCE_THRESHOLD = 0.6
 
-type TabKey = 'summary' | 'clauses' | 'risks' | 'obligations' | 'entities' | 'qa'
+type TabKey = 'summary' | 'clauses' | 'risks' | 'obligations' | 'entities' | 'comments' | 'qa'
 
 function PageSkeleton() {
     return (
@@ -125,7 +126,8 @@ function AnalysisView() {
             initialTab === 'clauses' ||
             initialTab === 'risks' ||
             initialTab === 'obligations' ||
-            initialTab === 'entities'
+            initialTab === 'entities' ||
+            initialTab === 'comments'
             ? initialTab
             : 'summary',
     )
@@ -294,6 +296,7 @@ function AnalysisView() {
                 label: 'Entities',
                 count: analysis?.entities.total,
             },
+            { key: 'comments' as TabKey, label: 'Comments' },
             { key: 'qa' as TabKey, label: 'Q&A' },
         ],
         [analysis],
@@ -551,6 +554,7 @@ function AnalysisView() {
                             {/* Viewer pane — sticks below the sticky TopBar (~69px) */}
                             <div className="xl:sticky xl:top-[86px] xl:h-[calc(100vh-110px)]">
                                 <DocumentViewer
+                                    documentId={documentId}
                                     text={text}
                                     filename={doc.filename}
                                     jumpRequest={jumpRequest}
@@ -642,11 +646,11 @@ function AnalysisView() {
                                         })}
                                     </nav>
 
-                                    {/* Tab content — Q&A manages its own scroll */}
+                                    {/* Tab content — Q&A and Comments manage their own scroll */}
                                     <div
                                         className={cn(
                                             'min-h-0 flex-1 p-4',
-                                            activeTab === 'qa'
+                                            activeTab === 'qa' || activeTab === 'comments'
                                                 ? 'flex'
                                                 : 'overflow-y-auto',
                                         )}
@@ -695,6 +699,13 @@ function AnalysisView() {
                                                             analysis.entities
                                                         }
                                                     />
+                                                )}
+                                                {activeTab === 'comments' && (
+                                                    <div className="min-h-0 w-full">
+                                                        <CommentsTab
+                                                            documentId={documentId}
+                                                        />
+                                                    </div>
                                                 )}
                                                 {activeTab === 'qa' && (
                                                     <div className="min-h-0 w-full">

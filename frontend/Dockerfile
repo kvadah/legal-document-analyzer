@@ -11,8 +11,9 @@ RUN npm install -g pnpm@9.12.3 && pnpm install --no-frozen-lockfile
 # Copy application code
 COPY . .
 
-# Build Next.js app
-RUN pnpm run build
+# Build Next.js app (telemetry off; heap capped for memory-constrained hosts)
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN NODE_OPTIONS=--max-old-space-size=1024 pnpm run build
 
 # Runtime stage
 FROM node:20-alpine

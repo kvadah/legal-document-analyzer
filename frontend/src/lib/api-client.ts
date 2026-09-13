@@ -256,6 +256,13 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     return res.json()
 }
 
+export async function apiDelete(path: string): Promise<void> {
+    const res = await apiFetch(path, { method: 'DELETE' })
+    if (!res.ok && res.status !== 204) {
+        throw await _toApiError(res, `DELETE ${path} failed`)
+    }
+}
+
 // ── Document text (viewer source) ────────────────────────────────────────────
 
 export interface PageBlock {
@@ -835,4 +842,103 @@ export async function apiDownloadReport(
     const disposition = res.headers.get('Content-Disposition') ?? ''
     const match = disposition.match(/filename="?([^";]+)"?/)
     return { blob, filename: match?.[1] ?? `report-${reportId}` }
+}
+
+// ── Collaboration: comments & annotations (08 §5–6) ─────────────────────────
+
+export interface CommentOut {
+    id: string
+    document_id: string
+    user_id: string
+    author_email: string
+    author_name?: string | null
+    content: string
+    page_number?: number | null
+    parent_comment_id?: string | null
+    resolved: boolean
+    created_at: string
+    updated_at: string
+}
+
+export interface CommentListResponse {
+    document_id: string
+    comments: CommentOut[]
+    total: number
+}
+
+export async function apiListComments(documentId: string): Promise<CommentListResponse> {
+    return apiGet<CommentListResponse>(`/documents/${documentId}/comments`)
+}
+
+export async function apiCreateComment(
+    documentId: string,
+    content: string,
+    options?: { page_number?: number; parent_comment_id?: string },
+): Promise<CommentOut> {
+    return apiPost<CommentOut>(`/documents/${documentId}/comments`, {
+        content,
+        ...options,
+    })
+}
+
+export async function apiUpdateComment(
+    commentId: string,
+    changes: { content?: string; resolved?: boolean },
+): Promise<CommentOut> {
+    return apiPatch<CommentOut>(`/comments/${commentId}`, changes)
+}
+
+export async function apiDeleteComment(commentId: string): Promise<void> {
+    await apiDelete(`/comments/${commentId}`)
+}
+
+export type AnnotationColor = 'yellow' | 'green' | 'blue' | 'red' | 'purple'
+
+export interface AnnotationOut {
+    id: string
+    document_id: string
+    user_id: string
+    author_email: string
+    author_name?: string | null
+    content: string
+    highlight_text: string
+    color: AnnotationColor
+    page_number: number
+    created_at: string
+    updated_at: string
+}
+
+export interface AnnotationListResponse {
+    document_id: string
+    annotations: AnnotationOut[]
+    total: number
+}
+
+export async function apiListAnnotations(
+    documentId: string,
+): Promise<AnnotationListResponse> {
+    return apiGet<AnnotationListResponse>(`/documents/${documentId}/annotations`)
+}
+
+export async function apiCreateAnnotation(
+    documentId: string,
+    annotation: {
+        highlight_text: string
+        content?: string
+        color?: AnnotationColor
+        page_number: number
+    },
+): Promise<AnnotationOut> {
+    return apiPost<AnnotationOut>(`/documents/${documentId}/annotations`, annotation)
+}
+
+export async function apiUpdateAnnotation(
+    annotationId: string,
+    changes: { content?: string; color?: AnnotationColor },
+): Promise<AnnotationOut> {
+    return apiPatch<AnnotationOut>(`/annotations/${annotationId}`, changes)
+}
+
+export async function apiDeleteAnnotation(annotationId: string): Promise<void> {
+    await apiDelete(`/annotations/${annotationId}`)
 }

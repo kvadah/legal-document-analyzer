@@ -557,7 +557,11 @@ class DocumentSummary(BaseModel):
 
 
 class Comment(BaseModel):
-    """Comment model."""
+    """Comment model (08-feature-spec-collaboration.md §5).
+
+    Threaded via parent_comment_id; optionally anchored to a page.
+    `resolved` tracks the review workflow (e.g. "needs partner sign-off").
+    """
 
     __tablename__ = "comments"
 
@@ -570,10 +574,15 @@ class Comment(BaseModel):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("comments.id"), nullable=True
+    )
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     __table_args__ = (
         Index("ix_comments_document_id", "document_id"),
         Index("ix_comments_user_id", "user_id"),
+        Index("ix_comments_parent_comment_id", "parent_comment_id"),
     )
 
     # Relationships
@@ -582,7 +591,14 @@ class Comment(BaseModel):
 
 
 class Annotation(BaseModel):
-    """Annotation model."""
+    """Annotation model (08-feature-spec-collaboration.md §6).
+
+    A highlighted span of viewer text with an optional note (`content`) and a
+    user-chosen `color` — colors are user-configurable, not a fixed taxonomy.
+    `highlight_text` is the verbatim span used to render the highlight in the
+    viewer; offsets are stored when provided but rendering relies on the quote
+    (robust across re-parses).
+    """
 
     __tablename__ = "annotations"
 
@@ -598,6 +614,8 @@ class Annotation(BaseModel):
     paragraph_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
     end_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    highlight_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    color: Mapped[str] = mapped_column(String(20), default="yellow", nullable=False)
 
     __table_args__ = (
         Index("ix_annotations_document_id", "document_id"),

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.collaboration import router as collaboration_router
 from app.api.v1.compare import router as compare_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.exports import router as exports_router
@@ -19,3 +20,4 @@ v1_router.include_router(exports_router)
 v1_router.include_router(compare_router)
 v1_router.include_router(relationships_router)
 v1_router.include_router(reports_router)
+v1_router.include_router(collaboration_router)
