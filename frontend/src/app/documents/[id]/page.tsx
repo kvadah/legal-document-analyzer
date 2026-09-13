@@ -707,14 +707,25 @@ function AnalysisView() {
                                                         />
                                                     </div>
                                                 )}
-                                                {activeTab === 'qa' && (
-                                                    <div className="min-h-0 w-full">
-                                                        <QaTab
-                                                            documentId={documentId}
-                                                            initialQuestion={initialQuestion}
-                                                        />
-                                                    </div>
-                                                )}
+                                                {/* Q&A stays mounted (hidden when
+                                                    inactive) so the conversation
+                                                    survives tab switches — even
+                                                    mid-stream. key remounts it
+                                                    when navigating to another
+                                                    document. */}
+                                                <div
+                                                    className={cn(
+                                                        'min-h-0 w-full',
+                                                        activeTab !== 'qa' && 'hidden',
+                                                    )}
+                                                >
+                                                    <QaTab
+                                                        key={documentId}
+                                                        documentId={documentId}
+                                                        initialQuestion={initialQuestion}
+                                                        active={activeTab === 'qa'}
+                                                    />
+                                                </div>
                                             </>
                                         )}
                                         {!analysisLoading && !analysis && !analysisError && (

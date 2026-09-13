@@ -1,31 +1,31 @@
-# Legal Document Analyzer
+# Legal Doc AI
 
-A multi-tenant contract intelligence platform. Upload legal documents, run them through an OCR → parsing → embedding pipeline, get AI-powered clause and risk analysis with citation-grounded navigation, search across your entire corpus, ask grounded questions with cited answers, compare contract versions word-by-word, and export professional analysis reports.
+A multi-tenant contract intelligence platform. Upload legal documents, run them through an OCR → parsing → embedding pipeline, get AI-powered clause and risk analysis with citation-grounded navigation, search your entire corpus, ask grounded questions with cited answers, compare contract versions word-by-word, and export professional reports.
 
 > **Disclaimer:** This platform provides document analysis tools, not legal advice. All AI-generated output must be reviewed by qualified legal professionals.
 
-> **Status: Phases 0–9 complete** — MVP (0–5), clause comparison (6), cross-document features (7), reports & portfolio dashboard (8), and collaboration (9) are shipped. Remaining: administration hardening (10) and deployment hardening (11). See the [build roadmap](../13-roadmap-build-order.md) for acceptance criteria per phase.
+---
+
+## Highlights
+
+- **Citation-grounded AI analysis** — every clause, risk, and answer links back to the exact page and highlighted text in the source document
+- **Grounded Q&A, not hallucination** — answers stream with sentence-level citations; citations whose quotes aren't verbatim in the source are dropped, and un-groundable questions get an honest "couldn't find it"
+- **Multi-tenant by design** — organization-scoped data isolation with role-based access control, verified by an explicit cross-tenant test suite
+- **Provider-agnostic LLM layer** — Gemini, Claude, or OpenAI behind one abstraction; switching providers is a config change, not a code change
+- **Runs keyless** — mock LLM/embedding providers let the entire pipeline run in development and CI without external API keys
 
 ---
 
 ## Features
 
-### Multi-Tenant Security
-- Organization-scoped tenancy with strict data isolation, verified by explicit cross-tenant tests
-- JWT authentication with httpOnly refresh-token cookies (access tokens kept in memory only)
-- Role-based access control — **admin**, **reviewer**, and **viewer** roles enforced across every endpoint
-- Org-scoped repository pattern ensuring no query can leak data across tenants
-
 ### Document Ingestion
-- Multipart single/batch upload with drag-and-drop UI and live status badges
+- Drag-and-drop single/batch upload with live pipeline status streaming (SSE)
 - Object storage (S3/MinIO) with local-filesystem fallback
 - Content validation, magic-byte sniffing, and SHA-256 deduplication
-- OCR via PaddleOCR (primary) with Tesseract fallback, plus skip-if-text-layer detection for native PDFs
-- Structural parsing → intelligent chunking → embedding generation → vector store indexing
-- Status state machine with Redis pub/sub and server-sent event streaming for live progress
+- OCR (PaddleOCR primary, Tesseract fallback) with skip-if-text-layer detection for native PDFs
+- Structural parsing → intelligent chunking → embedding generation → vector indexing
 
 ### AI-Powered Analysis
-- Provider-abstracted LLM layer (Gemini, Claude, OpenAI) — switching providers is a config change, not a code change; mock providers let the full pipeline run in tests and keyless dev without external APIs
 - Metadata extraction: parties, dates, financial terms, governing law, and more
 - Clause detection across all tracked clause types, with confidence scores and not-found tracking
 - Risk detection combining deterministic rule-based checks with LLM judgment
@@ -39,21 +39,21 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 - **Risks** — severity-sorted cards with triage controls (flagged / acknowledged / dismissed)
 - **Obligations** — timeline view with deadlines and status badges
 - **Entities** — grouped by type, click-to-navigate to source occurrences
-- **Comments** — threaded review discussion with resolution workflow (see Collaboration)
-- **Q&A** — streaming chat grounded in the document (see below)
-- Shared `CitationLink` component: every citation, in any tab, jumps the viewer to the exact page and highlights the anchor text
-- Responsive from phone to ultrawide (mobile drawer nav, fluid type, adaptive grids)
+- **Comments** — threaded review discussion with a resolution workflow
+- **Q&A** — streaming chat grounded in the document; the conversation persists across tab switches and page revisits
+- Every citation, in any tab, jumps the viewer to the exact page and highlights the anchor text
+- Responsive from phone to ultrawide
 
 ### Search
 - Keyword, semantic, and hybrid search (merged with Reciprocal Rank Fusion)
 - Results grouped by document with highlighted snippets and source badges
-- Filters: document type, date range, document
-- Deep-links from results directly into the Analysis viewer at the matched page
+- Filters: document type, date range, specific documents
+- Deep-links from results directly into the viewer at the matched page
 
 ### Grounded Q&A
-- **Single-document** (`/documents/{id}/ask`): streaming answers with sentence-level citations, multi-turn conversation history, and grounding validation — citations whose quotes aren't verbatim in the source are dropped
-- **Cross-document** (`/ask`): ask questions across the entire org corpus or a selected subset; answers attribute each point to the document it came from
-- Similarity threshold check *before* the LLM call — un-groundable questions get an honest "couldn't find it" instead of a hallucination
+- **Single-document**: streaming answers with sentence-level citations and multi-turn conversation history
+- **Cross-document**: ask across the entire corpus or a selected subset; answers attribute each point to the document it came from and surface conflicting terms rather than blending them
+- Similarity threshold checked *before* the LLM call — un-groundable questions get "couldn't find it" instead of a hallucination
 - Non-advisory framing: requests for legal advice are declined with an explanation
 
 ### Clause Comparison
@@ -65,37 +65,26 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 
 ### Relationships & Versioning
 - Link related documents — amendments, exhibits, related agreements, supersessions
-- System-inferred relationship suggestions (from cross-references in document text) that require user confirmation — never created silently
-- Version-aware upload: new uploads can be registered as versions of existing documents
-- Version history panel with one-click "compare to previous version" routing into the Comparison view
-- Every version retains its own complete analysis history for auditability
+- System-inferred relationship suggestions that require user confirmation — never created silently
+- Version-aware upload: every version retains its own complete analysis history for auditability
+- One-click "compare to previous version" routing into the Comparison view
 
 ### Collaboration
-- **Review comments**: threaded (one level of replies), document-scoped or page-anchored — the page chip jumps the viewer to the anchored page
-- **Resolution workflow**: any reviewer can resolve/reopen a comment; content edits are author-only; deletion is author-or-admin and cascades to replies
-- **Annotations**: select text in the viewer to highlight it with a color (5-color palette) and an optional note; highlights render inline in the document text, merged with citation jumps
-- **Annotations panel**: filterable by color and author, click-to-navigate with highlight, author/admin remove
-- Viewer-role members see comments and annotations read-only (per the collaboration RBAC matrix)
-- Multi-user by design: two org members see each other's comments and annotations in real time — covered by explicit tests
+- Threaded review comments, document-scoped or page-anchored, with resolve/reopen workflow
+- Text-highlight annotations with configurable colors and optional notes, rendered inline in the viewer
+- Annotations panel filterable by color and author, with click-to-navigate
+- Viewer-role members participate read-only
 
-### Export
-- Analysis reports as **PDF**, **DOCX**, or **JSON**, each carrying the persistent AI disclaimer
-- Download directly from the Analysis view header
-
-### Reports
-- **Portfolio Risk Report**: risk counts by severity and type, contract score distribution, average score, and a critical-risk focus list across the whole portfolio or a selected document subset
-- **Obligation Calendar Report**: every obligation across the portfolio, bucketed into overdue / due soon / upcoming / no deadline for compliance tracking
-- Async generation via the worker queue (`POST /reports` → 202, poll `GET /reports/{id}`), with results stored in object storage and downloaded through the authenticated API
-- Export formats: **XLSX** (multi-sheet workbook), **JSON**, **PDF**, **DOCX** — all carrying the AI disclaimer
-- Reports page: live portfolio dashboard plus a generate flow (type / scope / format) and a generated-reports table with status polling and download
+### Reports & Export
+- **Portfolio Risk Report**: risk counts by type/severity, score distribution, critical-risk focus list
+- **Obligation Calendar Report**: all obligations bucketed into overdue / due soon / upcoming
+- Async generation with status polling; export as **XLSX**, **PDF**, **DOCX**, or **JSON**
+- Single-document analysis export as **PDF**, **DOCX**, or **JSON** from the Analysis view
 
 ### Administration
-- Member management: invite, role changes, deactivate/reactivate — with self-lockout prevention
+- Member management: invite, inline role changes, deactivate/reactivate, with self-lockout prevention
 - Usage dashboard: document, analysis, and storage stats, upload trends, pipeline health
 - Deactivated members are locked out immediately at login and token refresh
-
-### Portfolio Dashboard
-- Portfolio-wide risk, score, and obligation trend views across all contracts
 
 ---
 
@@ -129,12 +118,12 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 | Service | Technology | Role |
 |---|---|---|
 | API | FastAPI (Python 3.12) | REST API, auth, orchestration |
-| Worker | FastAPI + Arq | Async ingestion & AI pipelines, comparison jobs |
+| Worker | FastAPI + Arq | Async ingestion & AI pipelines, comparison and report jobs |
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS | Analysis workspace, search, admin |
 | Database | PostgreSQL 16 | Documents, analyses, users, relationships |
 | Vector Store | Qdrant | Chunk embeddings for semantic search & RAG |
 | Cache / Queue | Redis 7 | Job queue, pub/sub, Q&A conversation history |
-| Object Storage | MinIO (S3-compatible) | Original files, exports |
+| Object Storage | MinIO (S3-compatible) | Original files, exports, reports |
 
 ---
 
@@ -142,12 +131,14 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 
 ### Prerequisites
 - Docker and Docker Compose
-- Git
+- An LLM API key (Gemini, Anthropic, or OpenAI) — or run keyless with mock providers (see [Configuration](#configuration))
 
 ### Start the stack
 
 ```bash
+git clone <repository-url>
 cd legal-doc-analyzer
+cp .env.example .env   # add your API keys
 docker compose up -d --build
 ```
 
@@ -182,16 +173,17 @@ Then register a new organization and admin user at [http://localhost:3000/regist
 
 ## Configuration
 
-All configuration lives in `.env` at the repository root. Key settings:
+All configuration lives in `.env`. Key settings:
 
 | Variable | Purpose |
 |---|---|
 | `DEFAULT_LLM_PROVIDER` | `gemini` \| `anthropic` \| `openai` |
+| `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | Provider API key (one required unless mocking) |
 | `GEMINI_LLM_MODEL` / `GEMINI_LLM_FAST_MODEL` | Gemini model names (use the `gemini-3.x` family — `2.5-*` is unavailable to recent keys) |
 | `MOCK_LLM` / `MOCK_EMBEDDINGS` | Set `true` to run the full pipeline without any API keys |
 | `VECTOR_SEARCH_BACKEND` | `qdrant` (default) or `memory` for keyless dev/tests |
 
-The LLM provider abstraction means switching from the interim Gemini free-tier setup to Claude or OpenAI is a config change only.
+Switching LLM providers is a config change only — the provider abstraction handles the rest.
 
 ---
 
@@ -215,7 +207,7 @@ pnpm lint
 pnpm test:e2e      # end-to-end (playwright)
 ```
 
-The test suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, versioning, report generation, and collaboration (comments + annotations, including the two-user acceptance scenario). 135 tests total.
+The suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, versioning, report generation, and collaboration.
 
 ---
 
@@ -237,7 +229,7 @@ legal-doc-analyzer/
 │   │   ├── repositories/      # Org-scoped data access layer
 │   │   ├── schemas/           # Pydantic schemas
 │   │   ├── services/          # Business logic (search, Q&A, export, ...)
-│   │   ├── utils/             # Shared helpers (SSE error guard)
+│   │   ├── utils/             # Shared helpers
 │   │   └── workers/           # Arq background jobs
 │   ├── alembic/               # Database migrations
 │   └── tests/
@@ -277,32 +269,6 @@ All tables use UUID primary keys, `created_at`/`updated_at` timestamps, foreign 
 
 ---
 
-## Roadmap
-
-### Shipped
-- Multi-tenant auth, RBAC, and data isolation
-- Ingestion pipeline: upload, validation, dedup, OCR, parsing, chunking, embeddings
-- AI analysis: metadata, clauses, risks, scores, summaries
-- Analysis workspace with citation-grounded navigation
-- Hybrid search across the corpus
-- Grounded Q&A — single-document and cross-document
-- Clause comparison with word-level diffs
-- Document relationships (with inference suggestions) and versioning
-- Export to PDF / DOCX / JSON
-- Reports: portfolio risk + obligation calendar, XLSX/JSON/PDF/DOCX, async generation
-- Collaboration: threaded review comments (resolve workflow) + text-highlight annotations with configurable colors
-- Administration: user management, usage dashboard
-- Portfolio dashboard
-- Responsive UI (phone → ultrawide)
-
-### Planned
-- **Administration & hardening** (Phase 10) — audit logging across all action types, data retention with soft-delete/hard-delete jobs, API rate limiting, systematic RBAC verification across every endpoint
-- **Deployment hardening** (Phase 11) — CI/CD pipeline, structured logging and error tracking, metrics endpoint, backup restore drills, load testing of the ingestion pipeline
-
-See the [build roadmap](../13-roadmap-build-order.md) for the full plan and acceptance criteria.
-
----
-
 ## Troubleshooting
 
 ### Services fail to start
@@ -331,34 +297,25 @@ The frontend container serves the `.next` build baked into its image — there i
 ### Every rebuild re-downloads dependencies
 The backend Dockerfiles install dependencies from `pyproject.toml` *before* copying source, with a BuildKit pip cache mount — code-only changes rebuild in seconds. Never move `COPY . .` above the dependency-install layer.
 
-### Gemini 429 / quota errors
-The interim LLM is Gemini on a free-tier key (~20 requests/day/model). The pipeline batches LLM calls (~6 per document) and the provider retries with server-advertised delays plus a configurable request interval (`GEMINI_MIN_REQUEST_INTERVAL`). If quota is exhausted: wait for the daily reset and retry the document (`POST /documents/{id}/retry`), point `GEMINI_LLM_MODEL` at a model with remaining quota, or switch providers (`DEFAULT_LLM_PROVIDER=anthropic|openai`).
-
-### Frontend issues
-- Clear the Next.js cache: `rm -rf frontend/.next`
-- `next build` runs ESLint by default — run `pnpm lint` locally before rebuilding Docker
+### LLM rate-limit (429) errors
+The Gemini free tier allows ~20 requests/day/model. The pipeline batches LLM calls (~6 per document) and the provider retries with server-advertised delays plus a configurable request interval (`GEMINI_MIN_REQUEST_INTERVAL`). If quota is exhausted: wait for the daily reset and retry the document (`POST /documents/{id}/retry`), point `GEMINI_LLM_MODEL` at a model with remaining quota, or switch providers — the abstraction makes it a config change.
 
 ---
 
-## Documentation
+## Security
 
-- [Project overview](../00-overview.md) — product scope and MVP definition
-- [Architecture](../01-architecture.md) — system design
-- [Tech stack](../02-tech-stack.md) — technology choices
-- [Data model](../03-data-model.md) — schema specification
-- [Ingestion pipeline](../04-ingestion-pipeline.md) — upload → OCR → chunking → embeddings
-- [AI pipeline](../05-ai-pipeline.md) — extraction, clause/risk detection, scoring
-- [Analysis features](../06-feature-spec-analysis.md) — analysis workspace specification
-- [Comparison & search](../07-feature-spec-comparison-search.md) — diff engine, search, RAG Q&A
-- [Collaboration features](../08-feature-spec-collaboration.md) — relationships, versioning, comments, annotations
-- [API specification](../09-api-spec.md) — endpoint reference
-- [Frontend specification](../10-frontend-spec.md) — UI specification
-- [Security & compliance](../11-security-compliance.md) — RBAC, tenancy, disclaimers
-- [Deployment](../12-deployment-infra.md) — infrastructure guide
-- [Build roadmap](../13-roadmap-build-order.md) — sequencing and acceptance criteria
+- JWT access tokens kept in memory only; refresh tokens in httpOnly cookies
+- Role-based access control (**admin / reviewer / viewer**) enforced at every endpoint
+- Organization-scoped repository layer prevents cross-tenant queries by construction
+- Deactivated members are locked out immediately at login and token refresh
+- Every AI output carries the persistent "not legal advice" disclaimer
 
 ---
 
 ## License
 
 Proprietary — see LICENSE file.
+
+## Contributing
+
+Internal project — see the maintainers for access and contribution guidelines.

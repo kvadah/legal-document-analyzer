@@ -4,6 +4,12 @@
  * Q&A tab — chat-style grounded RAG interface scoped to one document
  * (10-frontend-spec.md §4). Answers stream over SSE with inline citation
  * markers rendered as clickable references that jump the document viewer.
+ *
+ * The conversation persists across tab switches (the parent keeps this
+ * component mounted but hidden) and across page revisits — messages and the
+ * conversation id are synced to sessionStorage per document, so leaving the
+ * Analysis view and coming back restores the full thread (per browser tab;
+ * opening the document in a new tab starts a fresh conversation).
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -30,6 +36,45 @@ interface ChatMessage {
     citations: Citation[]
     streaming?: boolean
     notFound?: boolean
+}
+
+const CHAT_STORAGE_PREFIX = 'qa:chat:'
+const MAX_PERSISTED_MESSAGES = 200
+
+interface PersistedChat {
+    conversationId: string | null
+    messages: ChatMessage[]
+}
+
+function loadChat(documentId: string): PersistedChat {
+    try {
+        const raw = sessionStorage.getItem(CHAT_STORAGE_PREFIX + documentId)
+        if (!raw) return { conversationId: null, messages: [] }
+        const parsed = JSON.parse(raw) as Partial<PersistedChat>
+        const messages: ChatMessage[] = (Array.isArray(parsed.messages) ? parsed.messages : [])
+            .filter(
+                m =>
+                    m != null &&
+                    (m.role === 'user' || m.role === 'assistant') &&
+                    typeof m.text === 'string',
+            )
+            .map(m => ({
+                role: m.role,
+                text: m.text,
+                citations: Array.isArray(m.citations) ? m.citations : [],
+                // A message persisted mid-stream restores as a plain message
+                streaming: false,
+                notFound: m.notFound ?? false,
+            }))
+            .slice(-MAX_PERSISTED_MESSAGES)
+        return {
+            conversationId:
+                typeof parsed.conversationId === 'string' ? parsed.conversationId : null,
+            messages,
+        }
+    } catch {
+        return { conversationId: null, messages: [] }
+    }
 }
 
 function AnswerText({
@@ -69,23 +114,52 @@ function AnswerText({
 export default function QaTab({
     documentId,
     initialQuestion,
+    active,
 }: {
     documentId: string
     initialQuestion?: string | null
+    active: boolean
 }) {
-    const [messages, setMessages] = useState<ChatMessage[]>([])
+    // Restored once per mount (the parent keys this component by documentId,
+    // so a mount always corresponds to exactly one document).
+    const [restored] = useState(() => loadChat(documentId))
+    const [messages, setMessages] = useState<ChatMessage[]>(restored.messages)
     const [input, setInput] = useState('')
     const [busy, setBusy] = useState(false)
-    const conversationRef = useRef<string | null>(null)
+    const conversationRef = useRef<string | null>(restored.conversationId)
     const scrollRef = useRef<HTMLDivElement>(null)
     const jump = useViewerJump()
     const initialAsked = useRef(false)
+
+    // Sync the conversation to sessionStorage on every change so it survives
+    // page navigations (and browser refreshes) within this tab.
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(
+                CHAT_STORAGE_PREFIX + documentId,
+                JSON.stringify({
+                    conversationId: conversationRef.current,
+                    messages: messages
+                        .slice(-MAX_PERSISTED_MESSAGES)
+                        .map(m => ({ ...m, streaming: false })),
+                }),
+            )
+        } catch {
+            // Storage unavailable or full — the chat just won't persist
+        }
+    }, [messages, documentId])
 
     const scrollToBottom = useCallback(() => {
         requestAnimationFrame(() => {
             scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
         })
     }, [])
+
+    // Land at the latest message on mount and whenever the tab becomes
+    // visible again (scrollTo is a no-op while the pane is display:none).
+    useEffect(() => {
+        if (active) scrollToBottom()
+    }, [active, scrollToBottom])
 
     const ask = useCallback(
         async (question: string) => {
