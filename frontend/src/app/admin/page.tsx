@@ -221,8 +221,8 @@ function UsersTab({
                     <p className="text-[13.5px] text-rose-700">{actionError}</p>
                 </div>
             )}
-            <div className="card overflow-hidden p-0">
-                <table className="w-full text-left">
+            <div className="card overflow-x-auto p-0">
+                <table className="w-full min-w-[820px] text-left">
                     <thead>
                         <tr className="border-b border-ink-100 bg-ink-50/50 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-400">
                             <th className="px-5 py-3">Member</th>
@@ -674,7 +674,7 @@ export default function AdminPage() {
                     description="User management, usage, and organisation settings."
                 />
 
-                <div className="flex gap-1.5 rounded-xl border border-ink-100 bg-white p-1.5 shadow-soft w-fit">
+                <div className="flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl border border-ink-100 bg-white p-1.5 shadow-soft">
                     {TABS.map(({ id, label, icon: Icon }) => (
                         <button
                             key={id}

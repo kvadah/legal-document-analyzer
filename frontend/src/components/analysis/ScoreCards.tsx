@@ -81,7 +81,7 @@ export default function ScoreCards({ score }: { score: ScoreOut }) {
 
     return (
         <div className="card overflow-hidden animate-fade-up">
-            <div className="flex items-stretch divide-x divide-ink-100">
+            <div className="flex flex-col divide-y divide-ink-100 sm:flex-row sm:items-stretch sm:divide-x sm:divide-y-0">
                 <div className="flex flex-1 items-center gap-4 p-5">
                     <ScoreRing
                         value={score.contract_score ?? 0}

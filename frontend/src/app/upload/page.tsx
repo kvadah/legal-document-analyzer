@@ -196,7 +196,7 @@ export default function UploadPage() {
                         void handleFiles(e.dataTransfer.files)
                     }}
                     className={cn(
-                        'group animate-fade-up relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed p-12 text-center transition-all duration-300',
+                        'group animate-fade-up relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-300 sm:p-12',
                         isDragging
                             ? 'scale-[1.01] border-indigo-400 bg-indigo-50/60 shadow-glow'
                             : 'border-ink-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/30',

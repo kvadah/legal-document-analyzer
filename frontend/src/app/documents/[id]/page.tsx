@@ -548,8 +548,8 @@ function AnalysisView() {
                     {/* Analysis view */}
                     {!busy && doc.status === 'analysis_ready' && (
                         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,500px)]">
-                            {/* Viewer pane */}
-                            <div className="xl:sticky xl:top-6 xl:h-[calc(100vh-170px)]">
+                            {/* Viewer pane — sticks below the sticky TopBar (~69px) */}
+                            <div className="xl:sticky xl:top-[86px] xl:h-[calc(100vh-110px)]">
                                 <DocumentViewer
                                     text={text}
                                     filename={doc.filename}
@@ -559,7 +559,7 @@ function AnalysisView() {
                             </div>
 
                             {/* Analysis pane */}
-                            <div className="flex min-w-0 flex-col gap-3 xl:h-[calc(100vh-170px)]">
+                            <div className="flex min-w-0 flex-col gap-3 xl:h-[calc(100vh-110px)]">
                                 {lowConfidence && (
                                     <div
                                         className="flex items-start gap-2.5 rounded-xl border border-rose-200/80 bg-rose-50 px-4 py-3 text-[13px] leading-relaxed text-rose-700 animate-scale-in"

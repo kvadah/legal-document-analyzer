@@ -47,8 +47,8 @@ function ScoreRing({ score }: { score: number }) {
     const c = 2 * Math.PI * r
     const filled = (score / 100) * c
     return (
-        <div className="relative h-24 w-24">
-            <svg viewBox="0 0 84 84" className="h-24 w-24 -rotate-90">
+        <div className="relative h-16 w-16 sm:h-24 sm:w-24">
+            <svg viewBox="0 0 84 84" className="h-16 w-16 sm:h-24 sm:w-24 -rotate-90">
                 <circle cx="42" cy="42" r={r} fill="none" stroke="#E5E9F2" strokeWidth="8" />
                 <circle
                     cx="42"
@@ -68,10 +68,10 @@ function ScoreRing({ score }: { score: number }) {
                 </defs>
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="font-display text-[26px] font-semibold leading-none text-ink-900">
+                <span className="font-display text-[18px] font-semibold leading-none text-ink-900 sm:text-[26px]">
                     {score}
                 </span>
-                <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-ink-400">
+                <span className="mt-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-ink-400 sm:text-[9px]">
                     Score
                 </span>
             </div>
@@ -320,7 +320,7 @@ export default function LandingPage() {
             {/* ── Nav ─────────────────────────────────────────── */}
             <header className="fixed inset-x-0 top-0 z-50">
                 <div className="glass border-b border-ink-950/5">
-                    <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+                    <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
                         <Link href="/">
                             <LogoWordmark />
                         </Link>
@@ -335,15 +335,15 @@ export default function LandingPage() {
                                 </a>
                             ))}
                         </nav>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
                             {!user && (
-                                <Link href="/login" className="btn-ghost text-[13.5px]">
+                                <Link href="/login" className="btn-ghost hidden text-[13.5px] sm:inline-flex">
                                     Sign in
                                 </Link>
                             )}
                             <Link
                                 href={primaryCta.href}
-                                className="btn-primary px-4 py-2 text-[13.5px]"
+                                className="btn-primary px-3.5 py-2 text-[12.5px] sm:px-4 sm:text-[13.5px]"
                             >
                                 {primaryCta.label}
                                 <ArrowRight size={14} />
@@ -354,21 +354,26 @@ export default function LandingPage() {
             </header>
 
             {/* ── Hero ────────────────────────────────────────── */}
-            <section className="relative overflow-hidden bg-ink-950 pb-24 pt-36">
+            <section className="relative overflow-hidden bg-ink-950 pb-24 pt-28 sm:pt-36">
                 <Aurora />
                 <div className="bg-grid-dark mask-fade-edges absolute inset-0" />
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-white/5 to-transparent" />
 
                 <div className="relative mx-auto max-w-6xl px-6 text-center">
-                    <div className="animate-fade-up mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-1.5 text-[12px] font-medium text-ink-200 shadow-inner-top backdrop-blur">
-                        <Sparkles size={13} className="text-gold-300" />
-                        AI contract intelligence for modern legal teams
-                        <span className="rounded-full bg-indigo-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-200">
+                    <div className="animate-fade-up mx-auto inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-1.5 text-[12px] font-medium text-ink-200 shadow-inner-top backdrop-blur">
+                        <Sparkles size={13} className="shrink-0 text-gold-300" />
+                        <span className="truncate">
+                            <span className="sm:hidden">AI contract intelligence</span>
+                            <span className="hidden sm:inline">
+                                AI contract intelligence for modern legal teams
+                            </span>
+                        </span>
+                        <span className="shrink-0 rounded-full bg-indigo-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-200">
                             Beta
                         </span>
                     </div>
 
-                    <h1 className="animate-fade-up animation-delay-100 mx-auto mt-8 max-w-3xl font-display text-[44px] font-semibold leading-[1.08] tracking-tight text-white text-balance md:text-[64px]">
+                    <h1 className="animate-fade-up animation-delay-100 mx-auto mt-8 max-w-3xl font-display text-[34px] font-semibold leading-[1.08] tracking-tight text-white text-balance sm:text-[44px] md:text-[64px]">
                         Every clause understood.{' '}
                         <span className="text-gradient-gold italic">Every risk</span> caught
                         before signature.
@@ -405,7 +410,7 @@ export default function LandingPage() {
 
             {/* ── Stats ───────────────────────────────────────── */}
             <section className="relative border-b border-ink-100 bg-white">
-                <div className="mx-auto grid max-w-6xl grid-cols-2 divide-x divide-ink-100 px-6 md:grid-cols-4">
+                <div className="mx-auto grid max-w-6xl grid-cols-2 px-6 md:grid-cols-4 md:divide-x md:divide-ink-100">
                     {STATS.map((stat, i) => (
                         <div
                             key={stat.label}
@@ -429,7 +434,7 @@ export default function LandingPage() {
                         <p className="animate-fade-up text-[11px] font-bold uppercase tracking-[0.22em] text-primary/70">
                             Capabilities
                         </p>
-                        <h2 className="animate-fade-up animation-delay-100 mt-3 font-display text-[34px] font-semibold tracking-tight text-ink-900 md:text-[40px]">
+                        <h2 className="animate-fade-up animation-delay-100 mt-3 font-display text-[28px] font-semibold tracking-tight text-ink-900 md:text-[40px]">
                             A review workflow that thinks like a lawyer
                         </h2>
                         <p className="animate-fade-up animation-delay-200 mt-4 text-[15.5px] leading-relaxed text-ink-500">
@@ -474,7 +479,7 @@ export default function LandingPage() {
                         <p className="animate-fade-up text-[11px] font-bold uppercase tracking-[0.22em] text-gold-300/80">
                             Workflow
                         </p>
-                        <h2 className="animate-fade-up animation-delay-100 mt-3 font-display text-[34px] font-semibold tracking-tight text-white md:text-[40px]">
+                        <h2 className="animate-fade-up animation-delay-100 mt-3 font-display text-[28px] font-semibold tracking-tight text-white md:text-[40px]">
                             From upload to insight in three steps
                         </h2>
                     </div>
@@ -517,7 +522,7 @@ export default function LandingPage() {
                         <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-primary/70">
                             Trust &amp; security
                         </p>
-                        <h2 className="mt-3 font-display text-[32px] font-semibold leading-tight tracking-tight text-ink-900 md:text-[38px]">
+                        <h2 className="mt-3 font-display text-[27px] font-semibold leading-tight tracking-tight text-ink-900 md:text-[38px]">
                             Built for confidential documents from day one
                         </h2>
                         <p className="mt-4 text-[15.5px] leading-relaxed text-ink-500">
@@ -587,7 +592,7 @@ export default function LandingPage() {
                     <Aurora />
                     <div className="bg-grid-dark mask-fade-edges absolute inset-0" />
                     <div className="relative">
-                        <h2 className="animate-fade-up mx-auto max-w-2xl font-display text-[32px] font-semibold leading-tight tracking-tight text-white text-balance md:text-[42px]">
+                        <h2 className="animate-fade-up mx-auto max-w-2xl font-display text-[27px] font-semibold leading-tight tracking-tight text-white text-balance md:text-[42px]">
                             Stop reading contracts line by line.
                         </h2>
                         <p className="animate-fade-up animation-delay-100 mx-auto mt-4 max-w-lg text-[15.5px] leading-relaxed text-ink-200/70">

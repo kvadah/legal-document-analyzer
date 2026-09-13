@@ -189,7 +189,7 @@ function AskView() {
 
     return (
         <AppLayout>
-            <div className="mx-auto flex h-[calc(100vh-150px)] max-w-3xl flex-col gap-4">
+            <div className="mx-auto flex h-[calc(100dvh-150px)] max-h-[900px] min-h-[560px] max-w-3xl flex-col gap-4">
                 <PageHeader
                     eyebrow="Ask"
                     title="Cross-document Q&A"
