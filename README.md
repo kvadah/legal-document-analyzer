@@ -4,6 +4,8 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 
 > **Disclaimer:** This platform provides document analysis tools, not legal advice. All AI-generated output must be reviewed by qualified legal professionals.
 
+> **Status: Phases 0–9 complete** — MVP (0–5), clause comparison (6), cross-document features (7), reports & portfolio dashboard (8), and collaboration (9) are shipped. Remaining: administration hardening (10) and deployment hardening (11). See the [build roadmap](../13-roadmap-build-order.md) for acceptance criteria per phase.
+
 ---
 
 ## Features
@@ -37,8 +39,10 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 - **Risks** — severity-sorted cards with triage controls (flagged / acknowledged / dismissed)
 - **Obligations** — timeline view with deadlines and status badges
 - **Entities** — grouped by type, click-to-navigate to source occurrences
+- **Comments** — threaded review discussion with resolution workflow (see Collaboration)
 - **Q&A** — streaming chat grounded in the document (see below)
 - Shared `CitationLink` component: every citation, in any tab, jumps the viewer to the exact page and highlights the anchor text
+- Responsive from phone to ultrawide (mobile drawer nav, fluid type, adaptive grids)
 
 ### Search
 - Keyword, semantic, and hybrid search (merged with Reciprocal Rank Fusion)
@@ -65,6 +69,14 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 - Version-aware upload: new uploads can be registered as versions of existing documents
 - Version history panel with one-click "compare to previous version" routing into the Comparison view
 - Every version retains its own complete analysis history for auditability
+
+### Collaboration
+- **Review comments**: threaded (one level of replies), document-scoped or page-anchored — the page chip jumps the viewer to the anchored page
+- **Resolution workflow**: any reviewer can resolve/reopen a comment; content edits are author-only; deletion is author-or-admin and cascades to replies
+- **Annotations**: select text in the viewer to highlight it with a color (5-color palette) and an optional note; highlights render inline in the document text, merged with citation jumps
+- **Annotations panel**: filterable by color and author, click-to-navigate with highlight, author/admin remove
+- Viewer-role members see comments and annotations read-only (per the collaboration RBAC matrix)
+- Multi-user by design: two org members see each other's comments and annotations in real time — covered by explicit tests
 
 ### Export
 - Analysis reports as **PDF**, **DOCX**, or **JSON**, each carrying the persistent AI disclaimer
@@ -93,7 +105,8 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
 ┌─────────────┐     ┌──────────────────────────────────────────────┐
 │  Next.js UI │────▶│                 FastAPI API                  │
 │  (port 3000)│     │  auth · documents · analysis · search · Q&A  │
-└─────────────┘     │  compare · relationships · export · admin    │
+└─────────────┘     │  compare · relationships · collaboration     │
+                    │  reports · export · admin                    │
                     └──────┬───────────┬───────────┬───────────────┘
                            │           │           │
                     ┌──────▼───┐ ┌─────▼────┐ ┌────▼─────┐
@@ -101,16 +114,16 @@ A multi-tenant contract intelligence platform. Upload legal documents, run them 
                     │  (data)  │ │ queue/   │ │  (files) │
                     └──────────┘ │ pub-sub  │ └──────────┘
                                  └─────┬────┘
-                          ┌────────────▼────────────┐
-                          │   Arq Worker            │
-                          │   OCR · parsing · AI    │
-                          │   pipeline · comparison │
-                          └────┬───────────────┬────┘
-                               │               │
-                        ┌──────▼─────┐  ┌──────▼──────┐
-                        │  Qdrant    │  │ LLM Provider │
-                        │ (vectors)  │  │ (embeddings) │
-                        └────────────┘  └─────────────┘
+                           ┌────────────▼────────────┐
+                           │   Arq Worker            │
+                           │   OCR · parsing · AI    │
+                           │   pipeline · comparison │
+                           └────┬───────────────┬────┘
+                                │               │
+                         ┌──────▼─────┐  ┌──────▼──────┐
+                         │  Qdrant    │  │ LLM Provider │
+                         │ (vectors)  │  │ (embeddings) │
+                         └────────────┘  └─────────────┘
 ```
 
 | Service | Technology | Role |
@@ -202,7 +215,7 @@ pnpm lint
 pnpm test:e2e      # end-to-end (playwright)
 ```
 
-The test suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, versioning, and report generation.
+The test suite covers the auth lifecycle, RBAC enforcement, explicit cross-tenant isolation, the ingestion and AI pipelines, search and grounded Q&A, clause comparison, document relationships, versioning, report generation, and collaboration (comments + annotations, including the two-user acceptance scenario). 135 tests total.
 
 ---
 
@@ -213,16 +226,18 @@ legal-doc-analyzer/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/            # Route handlers (auth, documents, analysis,
-│   │   │                      #   search, compare, relationships, exports)
+│   │   │                      #   search, compare, relationships,
+│   │   │                      #   collaboration, reports, exports)
 │   │   ├── core/              # Config, security, dependencies
 │   │   ├── db/                # Session management, Qdrant init
 │   │   ├── llm/               # LLM provider abstraction + prompts
 │   │   ├── models/            # SQLAlchemy models
-│   │   ├── pipelines/         # Ingestion, AI analysis, comparison
+│   │   ├── pipelines/         # Ingestion, AI analysis, comparison, reports
 │   │   ├── providers/         # Embedding providers
 │   │   ├── repositories/      # Org-scoped data access layer
 │   │   ├── schemas/           # Pydantic schemas
 │   │   ├── services/          # Business logic (search, Q&A, export, ...)
+│   │   ├── utils/             # Shared helpers (SSE error guard)
 │   │   └── workers/           # Arq background jobs
 │   ├── alembic/               # Database migrations
 │   └── tests/
@@ -256,7 +271,9 @@ All tables use UUID primary keys, `created_at`/`updated_at` timestamps, foreign 
 | `obligations` | Timeline items and deadlines |
 | `document_summaries` | AI-generated summaries |
 | `comparisons` | Structured comparison results |
-| `comments` | Review comments (schema in place, UI in development) |
+| `comments` | Threaded review comments with resolution state |
+| `annotations` | Text-highlight annotations (verbatim span, color, note) |
+| `reports` | Portfolio report jobs (type, format, status, storage path) |
 
 ---
 
@@ -273,13 +290,14 @@ All tables use UUID primary keys, `created_at`/`updated_at` timestamps, foreign 
 - Document relationships (with inference suggestions) and versioning
 - Export to PDF / DOCX / JSON
 - Reports: portfolio risk + obligation calendar, XLSX/JSON/PDF/DOCX, async generation
+- Collaboration: threaded review comments (resolve workflow) + text-highlight annotations with configurable colors
 - Administration: user management, usage dashboard
 - Portfolio dashboard
+- Responsive UI (phone → ultrawide)
 
 ### Planned
-- **Collaboration** — threaded review comments (document- and page-scoped, with resolution workflow) and text annotations with configurable highlight colors rendered as viewer overlays
-- **Administration & hardening** — audit logging across all action types, data retention with soft-delete/hard-delete jobs, API rate limiting, systematic RBAC verification across every endpoint
-- **Deployment hardening** — CI/CD pipeline, structured logging and error tracking, metrics endpoint, backup restore drills, load testing of the ingestion pipeline
+- **Administration & hardening** (Phase 10) — audit logging across all action types, data retention with soft-delete/hard-delete jobs, API rate limiting, systematic RBAC verification across every endpoint
+- **Deployment hardening** (Phase 11) — CI/CD pipeline, structured logging and error tracking, metrics endpoint, backup restore drills, load testing of the ingestion pipeline
 
 See the [build roadmap](../13-roadmap-build-order.md) for the full plan and acceptance criteria.
 
