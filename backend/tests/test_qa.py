@@ -1,8 +1,10 @@
 """Phase 5 RAG Q&A tests — grounding, threshold, tenancy, non-advisory."""
 import json
 
+import httpx
 import pytest
 from app.core.config import settings
+from app.providers.embeddings import MockEmbeddingProvider, reset_embedding_provider
 
 from tests.conftest import register_user
 
@@ -173,6 +175,30 @@ async def test_ask_requires_auth(client):
         json={"question": "What is this?"},
     )
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ask_provider_failure_yields_error_event(client):
+    """A mid-stream provider failure (e.g. DNS outage) must surface as an
+    `error` SSE event, not an aborted chunked response."""
+    reg = await register_user(client, email="qa7@example.com", org_name="QA7 Org")
+    token = reg.json()["access_token"]
+    doc_id = await _upload(client, token)
+
+    class _BrokenEmbeddingProvider:
+        async def embed_texts(self, texts):
+            raise httpx.ConnectError("[Errno -2] Name or service not known")
+
+    reset_embedding_provider(_BrokenEmbeddingProvider())
+    try:
+        resp = await _ask(client, token, doc_id, "What is the payment fee?")
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        assert events, "expected at least one SSE event"
+        assert events[-1][0] == "error"
+        assert "unreachable" in events[-1][1]["message"].lower()
+    finally:
+        reset_embedding_provider(MockEmbeddingProvider())
 
 
 @pytest.mark.asyncio

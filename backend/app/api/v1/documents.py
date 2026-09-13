@@ -23,6 +23,7 @@ from app.schemas.document import (
     UploadResponse,
 )
 from app.services import document_service
+from app.utils.sse import sse_error_guard
 from app.workers.pool import enqueue_ingestion
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -154,7 +155,7 @@ async def stream_document_status(
             await pubsub.unsubscribe(status_channel(document_id))
             await pubsub.aclose()
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(sse_error_guard(event_generator()))
 
 
 @router.post("/{document_id}/retry", status_code=202)

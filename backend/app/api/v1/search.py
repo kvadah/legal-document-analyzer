@@ -13,6 +13,7 @@ from app.db.session import get_session
 from app.schemas.search import AskAllRequest, AskRequest, SearchRequest, SearchResponse
 from app.services import qa_service, search_service
 from app.services.document_service import get_document
+from app.utils.sse import sse_error_guard
 
 router = APIRouter(tags=["search"])
 
@@ -33,12 +34,14 @@ async def ask_all_documents(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> EventSourceResponse:
     """Cross-document grounded RAG Q&A over the org corpus (09-api-spec.md §4)."""
-    generator = qa_service.ask_all(
-        session,
-        current_user=current_user,
-        question=body.question,
-        conversation_id=body.conversation_id,
-        filters=body.filters,
+    generator = sse_error_guard(
+        qa_service.ask_all(
+            session,
+            current_user=current_user,
+            question=body.question,
+            conversation_id=body.conversation_id,
+            filters=body.filters,
+        )
     )
     return EventSourceResponse(generator)
 
@@ -56,11 +59,13 @@ async def ask_document(
     doc = await get_document(session, current_user=current_user, document_id=document_id)
     qa_service.verify_askable(doc.status)
 
-    generator = qa_service.ask(
-        session,
-        current_user=current_user,
-        document_id=document_id,
-        question=body.question,
-        conversation_id=body.conversation_id,
+    generator = sse_error_guard(
+        qa_service.ask(
+            session,
+            current_user=current_user,
+            document_id=document_id,
+            question=body.question,
+            conversation_id=body.conversation_id,
+        )
     )
     return EventSourceResponse(generator)

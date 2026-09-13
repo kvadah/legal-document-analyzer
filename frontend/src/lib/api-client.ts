@@ -548,6 +548,7 @@ async function _streamSse(
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let terminated = false
 
     const dispatch = (block: string) => {
         let eventName = ''
@@ -565,19 +566,26 @@ async function _streamSse(
         }
         if (eventName === 'citations') handlers.onCitations?.(data.citations ?? [])
         else if (eventName === 'delta') handlers.onDelta?.(data.text ?? '')
-        else if (eventName === 'done')
+        else if (eventName === 'done') {
+            terminated = true
             handlers.onDone?.({
                 conversation_id: data.conversation_id ?? '',
                 found_in_document: data.found_in_document ?? false,
                 answer: data.answer ?? '',
             })
-        else if (eventName === 'error') handlers.onError?.(data.message ?? 'Question failed')
+        } else if (eventName === 'error') {
+            terminated = true
+            handlers.onError?.(data.message ?? 'Question failed')
+        }
     }
 
     for (;;) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
+        // sse-starlette terminates lines with \r\n, so event blocks are
+        // separated by \r\n\r\n — normalize before splitting on \n\n.
+        buffer = buffer.replace(/\r\n/g, '\n')
         let separator = buffer.indexOf('\n\n')
         while (separator !== -1) {
             dispatch(buffer.slice(0, separator))
@@ -586,6 +594,7 @@ async function _streamSse(
         }
     }
     if (buffer.trim()) dispatch(buffer)
+    if (!terminated) handlers.onError?.('Connection lost before the answer completed')
 }
 
 /** Stream a grounded answer for a question about one document. */
