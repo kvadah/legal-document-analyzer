@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     rag_history_turns: int = 3
     rag_conversation_ttl_seconds: int = 24 * 60 * 60
 
+    # --- Rate limiting (09-api-spec.md §12) ---
+    rate_limit_enabled: bool = True
+    upload_rate_limit_per_hour: int = 100   # documents per org per hour
+    search_rate_limit_per_minute: int = 60  # search + Q&A per user per minute
+
+    # --- Data retention (11-security-compliance.md §7) ---
+    # Waiting period before a scheduled org deletion is executed.
+    org_deletion_wait_days: int = 7
+
     @field_validator("gemini_thinking_budget", mode="before")
     @classmethod
     def _empty_str_to_none(cls, v: object) -> object:

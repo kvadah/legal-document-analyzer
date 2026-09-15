@@ -4,10 +4,10 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, get_current_user, require_role
 from app.db.session import get_session
 from app.models.models import RiskStatus
 from app.schemas.analysis import (
@@ -20,7 +20,7 @@ from app.schemas.analysis import (
     ScoreOut,
     SummaryOut,
 )
-from app.services import analysis_service
+from app.services import analysis_service, audit_service
 
 router = APIRouter(prefix="/documents", tags=["analysis"])
 
@@ -57,12 +57,27 @@ async def update_document_risk(
     document_id: UUID,
     risk_id: UUID,
     body: RiskUpdateRequest,
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    request: Request,
+    # Triage is a mutation — viewers are read-only (11-security-compliance.md §2).
+    current_user: Annotated[CurrentUser, Depends(require_role("reviewer", "admin"))],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RiskOut:
-    return await analysis_service.update_risk_status(
+    """Risk triage (flagged/acknowledged/dismissed) — audited per 11 §6."""
+    risk = await analysis_service.update_risk_status(
         session, current_user, document_id, risk_id, RiskStatus(body.status)
     )
+    await audit_service.record(
+        session,
+        organization_id=current_user.org_id,
+        user_id=current_user.id,
+        action=audit_service.AuditAction.RISK_STATUS_CHANGED,
+        resource_type="risk",
+        resource_id=risk_id,
+        ip_address=request.client.host if request.client else None,
+        details={"document_id": str(document_id), "status": body.status},
+    )
+    await session.commit()
+    return risk
 
 
 @router.get("/{document_id}/entities", response_model=EntityListResponse)

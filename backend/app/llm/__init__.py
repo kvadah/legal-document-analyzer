@@ -5,34 +5,51 @@ from app.core.config import settings
 from app.llm.base import LLMCallLog, LLMProvider, ModelTier, StructuredResult
 from app.llm.mock_provider import MockLLMProvider
 
-_provider: LLMProvider | None = None
+_providers: dict[str, LLMProvider] = {}
 
 
-def get_llm_provider() -> LLMProvider:
-    global _provider
-    if _provider is None:
-        if settings.mock_llm:
-            _provider = MockLLMProvider()
-        elif settings.default_llm_provider == "anthropic":
-            from app.llm.anthropic_provider import AnthropicProvider
+def _build_provider(name: str) -> LLMProvider:
+    if settings.mock_llm:
+        return MockLLMProvider()
+    if name == "anthropic":
+        from app.llm.anthropic_provider import AnthropicProvider
 
-            _provider = AnthropicProvider()
-        elif settings.default_llm_provider == "openai":
-            from app.llm.openai_provider import OpenAIProvider
+        return AnthropicProvider()
+    if name == "openai":
+        from app.llm.openai_provider import OpenAIProvider
 
-            _provider = OpenAIProvider()
-        elif settings.default_llm_provider == "gemini":
-            from app.llm.gemini_provider import GeminiProvider
+        return OpenAIProvider()
+    if name == "gemini":
+        from app.llm.gemini_provider import GeminiProvider
 
-            _provider = GeminiProvider()
-        else:
-            raise ValueError(f"Unknown LLM provider: {settings.default_llm_provider}")
-    return _provider
+        return GeminiProvider()
+    raise ValueError(f"Unknown LLM provider: {name}")
+
+
+def get_llm_provider(preferred: str | None = None) -> LLMProvider:
+    """Return the shared provider instance.
+
+    ``preferred`` is the org-level provider preference (09-api-spec.md §9);
+    it falls back to the server default. Providers are cached per name.
+    """
+    name = preferred or settings.default_llm_provider
+    if name not in _providers:
+        _providers[name] = _build_provider(name)
+    return _providers[name]
+
+
+def current_provider_name(preferred: str | None = None) -> str:
+    if settings.mock_llm:
+        return "mock"
+    return preferred or settings.default_llm_provider
 
 
 def reset_llm_provider(provider: LLMProvider | None = None) -> None:
-    global _provider
-    _provider = provider
+    global _providers
+    _providers = {}
+    if provider is not None:
+        # Tests reset with a single instance that must serve every lookup.
+        _providers[settings.default_llm_provider] = provider
 
 
 __all__ = [
@@ -43,4 +60,5 @@ __all__ = [
     "MockLLMProvider",
     "get_llm_provider",
     "reset_llm_provider",
+    "current_provider_name",
 ]

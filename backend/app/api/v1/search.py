@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.deps import CurrentUser, get_current_user
+from app.core.rate_limit import search_rate_limit
 from app.db.session import get_session
 from app.schemas.search import AskAllRequest, AskRequest, SearchRequest, SearchResponse
 from app.services import qa_service, search_service
@@ -18,7 +19,11 @@ from app.utils.sse import sse_error_guard
 router = APIRouter(tags=["search"])
 
 
-@router.post("/search", response_model=SearchResponse)
+@router.post(
+    "/search",
+    response_model=SearchResponse,
+    dependencies=[Depends(search_rate_limit())],
+)
 async def search(
     body: SearchRequest,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -27,7 +32,7 @@ async def search(
     return await search_service.search(session, current_user=current_user, request=body)
 
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[Depends(search_rate_limit())])
 async def ask_all_documents(
     body: AskAllRequest,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -46,7 +51,10 @@ async def ask_all_documents(
     return EventSourceResponse(generator)
 
 
-@router.post("/documents/{document_id}/ask")
+@router.post(
+    "/documents/{document_id}/ask",
+    dependencies=[Depends(search_rate_limit())],
+)
 async def ask_document(
     document_id: UUID,
     body: AskRequest,

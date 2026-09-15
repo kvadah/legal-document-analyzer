@@ -1,5 +1,6 @@
 """Auth service: registration, login, token lifecycle, invitations."""
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -27,6 +28,7 @@ from app.models.models import User, UserRole
 from app.repositories.org_repo import OrgRepository
 from app.repositories.user_repo import UserRepository
 from app.schemas.auth import AuthResponse, AuthUserOut, UserListResponse, UserOut
+from app.services import audit_service
 
 
 def _build_auth_response(user: User, org_name: str) -> tuple[str, str, AuthResponse]:
@@ -56,6 +58,7 @@ async def register(
     org_name: str,
     email: str,
     password: str,
+    ip_address: str | None = None,
 ) -> tuple[str, str, AuthResponse]:
     """Create a new org and first admin user atomically.
 
@@ -81,6 +84,15 @@ async def register(
         hashed_password=hash_password(password),
         role=UserRole.ADMIN,
     )
+    await audit_service.record(
+        session,
+        organization_id=org.id,
+        user_id=user.id,
+        action=audit_service.AuditAction.AUTH_REGISTER,
+        resource_type="organization",
+        resource_id=org.id,
+        ip_address=ip_address,
+    )
     await session.commit()
 
     access_token, refresh_token, resp = _build_auth_response(user, org.name)
@@ -93,6 +105,7 @@ async def login(
     *,
     email: str,
     password: str,
+    ip_address: str | None = None,
 ) -> tuple[str, str, AuthResponse]:
     """Verify credentials and issue tokens.
 
@@ -112,6 +125,18 @@ async def login(
 
     if user is None or not verify_password(password, user.password_hash):
         await increment_login_failures(email)
+        if user is not None:
+            # Auditable failed attempt against a real account. Committed
+            # directly: the request raises before the outer transaction
+            # would commit, and the attempt must survive the rollback.
+            await audit_service.record_and_commit(
+                session,
+                organization_id=user.organization_id,
+                user_id=user.id,
+                action=audit_service.AuditAction.AUTH_LOGIN_FAILED,
+                ip_address=ip_address,
+                details={"email": email.lower()},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unauthorized", "message": "Invalid email or password"},
@@ -119,6 +144,14 @@ async def login(
         )
 
     if not user.is_active:
+        await audit_service.record_and_commit(
+            session,
+            organization_id=user.organization_id,
+            user_id=user.id,
+            action=audit_service.AuditAction.AUTH_LOGIN_FAILED,
+            ip_address=ip_address,
+            details={"email": email.lower(), "reason": "deactivated"},
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "forbidden", "message": "Account is deactivated"},
@@ -130,6 +163,16 @@ async def login(
     org_repo = OrgRepository(session)
     org = await org_repo.get_by_id(user.organization_id)
     org_name = org.name if org else "Unknown"
+
+    user.last_login_at = datetime.now(UTC)
+    await audit_service.record(
+        session,
+        organization_id=user.organization_id,
+        user_id=user.id,
+        action=audit_service.AuditAction.AUTH_LOGIN,
+        ip_address=ip_address,
+    )
+    await session.commit()
 
     access_token, refresh_token, resp = _build_auth_response(user, org_name)
     await store_refresh_token(refresh_token, str(user.id))
@@ -179,9 +222,28 @@ async def refresh_tokens(
     return new_access, new_refresh, str(user.id)
 
 
-async def logout(*, refresh_token: str) -> None:
-    """Invalidate a refresh token."""
+async def logout(
+    session: AsyncSession, *, refresh_token: str, ip_address: str | None = None
+) -> None:
+    """Invalidate a refresh token, auditing the logout when the token is known."""
+    user_id = await validate_refresh_token(refresh_token)
     await delete_refresh_token(refresh_token)
+    if user_id is None:
+        return
+    from sqlalchemy import select
+
+    stmt = select(User).where(User.id == uuid.UUID(user_id))
+    user = (await session.execute(stmt)).scalar_one_or_none()
+    if user is None:
+        return
+    await audit_service.record(
+        session,
+        organization_id=user.organization_id,
+        user_id=user.id,
+        action=audit_service.AuditAction.AUTH_LOGOUT,
+        ip_address=ip_address,
+    )
+    await session.commit()
 
 
 async def invite_user(
@@ -191,6 +253,7 @@ async def invite_user(
     admin_org_id: str,
     email: str,
     role: str,
+    ip_address: str | None = None,
 ) -> str:
     """Store an invite token for a new user and return it.
 
@@ -205,6 +268,16 @@ async def invite_user(
         "invited_by": admin_user_id,
     }
     await store_invite_token(token, payload)
+    await audit_service.record(
+        session,
+        organization_id=admin_org_id,
+        user_id=admin_user_id,
+        action=audit_service.AuditAction.AUTH_INVITE_SENT,
+        resource_type="user",
+        ip_address=ip_address,
+        details={"email": email.lower(), "role": role},
+    )
+    await session.commit()
     return token
 
 
@@ -244,6 +317,15 @@ async def accept_invite(
         email=email,
         hashed_password=hash_password(password),
         role=UserRole(role_str),
+    )
+    await audit_service.record(
+        session,
+        organization_id=org_id,
+        user_id=user.id,
+        action=audit_service.AuditAction.AUTH_INVITE_ACCEPTED,
+        resource_type="user",
+        resource_id=user.id,
+        details={"email": email},
     )
     await session.commit()
     await delete_invite_token(token)
@@ -292,6 +374,7 @@ async def update_user(
     user_id: uuid.UUID,
     role: str | None = None,
     is_active: bool | None = None,
+    ip_address: str | None = None,
 ) -> UserOut:
     """Change a member's role and/or activation status (admin only).
 
@@ -309,9 +392,32 @@ async def update_user(
 
     repo = UserRepository(session, org_id)
     user = await repo.get_by_id(user_id)
-    if role is not None:
+    if role is not None and role != user.role.value:
+        await audit_service.record(
+            session,
+            organization_id=org_id,
+            user_id=admin_user_id,
+            action=audit_service.AuditAction.USER_ROLE_CHANGED,
+            resource_type="user",
+            resource_id=user_id,
+            ip_address=ip_address,
+            details={"email": user.email, "from": user.role.value, "to": role},
+        )
         user.role = UserRole(role)
-    if is_active is not None:
+    if is_active is not None and is_active != user.is_active:
+        await audit_service.record(
+            session,
+            organization_id=org_id,
+            user_id=admin_user_id,
+            action=audit_service.AuditAction.USER_STATUS_CHANGED,
+            resource_type="user",
+            resource_id=user_id,
+            ip_address=ip_address,
+            details={
+                "email": user.email,
+                "deactivated": not is_active,
+            },
+        )
         user.is_active = is_active
     await repo.save(user)
     await session.commit()

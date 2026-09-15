@@ -78,6 +78,9 @@ async def _apply_filters(
 ) -> Select:
     stmt = stmt.where(Document.organization_id == UUID(current_user.org_id))
     stmt = stmt.where(Document.status.in_(SEARCHABLE_STATUSES))
+    # Soft-deleted documents are excluded from all normal queries
+    # (11-security-compliance.md §7).
+    stmt = stmt.where(Document.deleted_at.is_(None))
     if filters.document_type:
         stmt = stmt.where(Document.document_type == filters.document_type)
     if filters.date_from:

@@ -36,6 +36,8 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MOCK_EMBEDDINGS", "true")
     monkeypatch.setenv("MOCK_LLM", "true")
     monkeypatch.setenv("VECTOR_SEARCH_BACKEND", "memory")
+    # Rate limits are off by default; dedicated tests re-enable them.
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     settings.storage_backend = "local"
     settings.local_storage_path = str(tmp_path / "storage")
     settings.run_ingestion_inline = True
@@ -46,11 +48,15 @@ def test_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings.mock_llm = True
     settings.vector_search_backend = "memory"
     settings.rag_similarity_threshold = 0.0
+    settings.rate_limit_enabled = False
+    settings.upload_rate_limit_per_hour = 100
+    settings.search_rate_limit_per_minute = 60
     reset_storage(LocalStorageService(settings.local_storage_path))
     reset_embedding_provider(MockEmbeddingProvider())
     reset_llm_provider(MockLLMProvider())
     reset_vector_store(InMemoryVectorStore())
     yield
+    settings.rate_limit_enabled = False
     reset_vector_store(InMemoryVectorStore())
 
 
@@ -60,6 +66,7 @@ def pipeline_test_session(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.pipelines.ai.pipeline.AsyncSessionLocal", TestSessionLocal)
     monkeypatch.setattr("app.pipelines.compare.pipeline.AsyncSessionLocal", TestSessionLocal)
     monkeypatch.setattr("app.pipelines.reports.pipeline.AsyncSessionLocal", TestSessionLocal)
+    monkeypatch.setattr("app.services.retention_service.AsyncSessionLocal", TestSessionLocal)
 
 
 @pytest.fixture(autouse=True)

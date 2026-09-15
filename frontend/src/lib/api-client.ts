@@ -59,6 +59,8 @@ export interface DocumentOut {
     contract_score?: number | null
     ai_confidence_score?: number | null
     parent_document_id?: string | null
+    deleted_at?: string | null
+    purges_at?: string | null
     created_at: string
     updated_at: string
 }
@@ -104,6 +106,19 @@ export async function apiListDocuments(): Promise<DocumentListResponse> {
 
 export async function apiGetDocument(documentId: string): Promise<DocumentOut> {
     return apiGet<DocumentOut>(`/documents/${documentId}`)
+}
+
+// Soft delete (recoverable within the org's grace period) + restore.
+export async function apiDeleteDocument(documentId: string): Promise<DocumentOut> {
+    return apiDelete<DocumentOut>(`/documents/${documentId}`)
+}
+
+export async function apiRestoreDocument(documentId: string): Promise<DocumentOut> {
+    return apiPost<DocumentOut>(`/documents/${documentId}/restore`, {})
+}
+
+export async function apiListDeletedDocuments(): Promise<DocumentListResponse> {
+    return apiGet<DocumentListResponse>('/documents/deleted')
 }
 
 export async function apiUploadDocuments(files: File[]): Promise<UploadResponse> {
@@ -256,11 +271,15 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     return res.json()
 }
 
-export async function apiDelete(path: string): Promise<void> {
+export async function apiDelete<T>(path: string): Promise<T> {
     const res = await apiFetch(path, { method: 'DELETE' })
     if (!res.ok && res.status !== 204) {
         throw await _toApiError(res, `DELETE ${path} failed`)
     }
+    if (res.status === 204) {
+        return undefined as T
+    }
+    return res.json()
 }
 
 // ── Document text (viewer source) ────────────────────────────────────────────
@@ -656,15 +675,21 @@ export interface UserListResponse {
     total: number
 }
 
+// ── Administration (09-api-spec.md §9) ────────────────────────────────────────
+
 export async function apiListUsers(): Promise<UserListResponse> {
-    return apiGet<UserListResponse>('/auth/users')
+    return apiGet<UserListResponse>('/admin/users')
 }
 
 export async function apiUpdateUser(
     userId: string,
     changes: { role?: UserRole; is_active?: boolean },
 ): Promise<OrgUserOut> {
-    return apiPatch<OrgUserOut>(`/auth/users/${userId}`, changes)
+    return apiPatch<OrgUserOut>(`/admin/users/${userId}`, changes)
+}
+
+export async function apiRemoveUser(userId: string): Promise<void> {
+    await apiDelete(`/admin/users/${userId}`)
 }
 
 export async function apiInviteUser(
@@ -672,6 +697,126 @@ export async function apiInviteUser(
     role: Exclude<UserRole, 'admin'>,
 ): Promise<{ message: string }> {
     return apiPost<{ message: string }>('/auth/invite', { email, role })
+}
+
+// ── Admin: usage, org settings, audit, export, deletion ─────────────────────
+
+export interface UsageDocumentStats {
+    total: number
+    analyzed: number
+    processing: number
+    errored: number
+    deleted: number
+}
+
+export interface UsageLLMStageStats {
+    stage: string
+    calls: number
+    input_tokens: number
+    output_tokens: number
+}
+
+export interface UsageLLMStats {
+    calls: number
+    input_tokens: number
+    output_tokens: number
+    by_stage: UsageLLMStageStats[]
+}
+
+export interface UsageUserStats {
+    total: number
+    active: number
+}
+
+export interface UsageResponse {
+    documents: UsageDocumentStats
+    storage_bytes: number
+    llm: UsageLLMStats
+    users: UsageUserStats
+}
+
+export async function apiGetUsage(): Promise<UsageResponse> {
+    return apiGet<UsageResponse>('/admin/usage')
+}
+
+export interface OrgSettingsOut {
+    id: string
+    name: string
+    plan: string
+    retention_days: number
+    audit_retention_days: number
+    llm_provider: string | null
+    scheduled_deletion_at: string | null
+    created_at: string
+    updated_at: string
+}
+
+export interface OrgSettingsUpdate {
+    name?: string
+    retention_days?: number
+    audit_retention_days?: number
+    llm_provider?: 'anthropic' | 'openai' | 'gemini' | 'mock'
+}
+
+export async function apiGetOrgSettings(): Promise<OrgSettingsOut> {
+    return apiGet<OrgSettingsOut>('/admin/org')
+}
+
+export async function apiUpdateOrgSettings(
+    changes: OrgSettingsUpdate,
+): Promise<OrgSettingsOut> {
+    return apiPatch<OrgSettingsOut>('/admin/org', changes)
+}
+
+export async function apiScheduleOrgDeletion(): Promise<OrgSettingsOut> {
+    return apiPost<OrgSettingsOut>('/admin/org/deletion', { confirm: true })
+}
+
+export async function apiCancelOrgDeletion(): Promise<OrgSettingsOut> {
+    return apiDelete<OrgSettingsOut>('/admin/org/deletion')
+}
+
+export interface AuditLogOut {
+    id: string
+    user_id: string | null
+    user_email: string | null
+    action: string
+    resource_type: string | null
+    resource_id: string | null
+    ip_address: string | null
+    details: Record<string, unknown> | null
+    created_at: string
+}
+
+export interface AuditLogListResponse {
+    items: AuditLogOut[]
+    total: number
+    limit: number
+    offset: number
+}
+
+export async function apiListAuditLogs(params?: {
+    action?: string
+    limit?: number
+    offset?: number
+}): Promise<AuditLogListResponse> {
+    const search = new URLSearchParams()
+    if (params?.action) search.set('action', params.action)
+    search.set('limit', String(params?.limit ?? 100))
+    search.set('offset', String(params?.offset ?? 0))
+    return apiGet<AuditLogListResponse>(`/admin/audit-logs?${search.toString()}`)
+}
+
+export async function apiExportOrgData(): Promise<{ blob: Blob; filename: string }> {
+    const res = await apiFetch('/admin/export')
+    if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.detail?.message ?? 'Org export failed')
+    }
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') ?? ''
+    const match = disposition.match(/filename="?([^";]+)"?/)
+    return { blob, filename: match?.[1] ?? 'org-export.json' }
 }
 
 // ── Compare (clause comparison) ──────────────────────────────────────────────

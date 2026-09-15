@@ -9,6 +9,7 @@ from app.pipelines.ai.pipeline import run_ai_pipeline
 from app.pipelines.compare.pipeline import run_comparison_pipeline
 from app.pipelines.ingestion.pipeline import run_ingestion_pipeline
 from app.pipelines.reports.pipeline import run_report_pipeline
+from app.services.retention_service import run_retention_pass
 
 _arq_pool = None
 
@@ -77,3 +78,8 @@ async def process_comparison(ctx, comparison_id: str) -> None:  # noqa: ARG001
 
 async def process_report(ctx, report_id: str) -> None:  # noqa: ARG001
     await run_report_pipeline(report_id)
+
+
+async def process_retention_pass(ctx) -> None:  # noqa: ARG001
+    """Daily retention sweep (11-security-compliance.md §7)."""
+    await run_retention_pass()

@@ -1,8 +1,7 @@
 """Auth endpoints — POST /api/v1/auth/*"""
 from typing import Annotated
-from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, require_role
@@ -15,9 +14,6 @@ from app.schemas.auth import (
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
-    UserListResponse,
-    UserOut,
-    UserUpdateRequest,
 )
 from app.services import auth_service
 
@@ -41,9 +37,17 @@ def _clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(_REFRESH_COOKIE, path="/api/v1/auth")
 
 
+def _client_ip(request: Request) -> str | None:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     body: RegisterRequest,
+    request: Request,
     response: Response,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AuthResponse:
@@ -53,6 +57,7 @@ async def register(
         org_name=body.org_name,
         email=body.email,
         password=body.password,
+        ip_address=_client_ip(request),
     )
     _set_refresh_cookie(response, refresh_token)
     return auth_resp
@@ -61,6 +66,7 @@ async def register(
 @router.post("/login", response_model=AuthResponse)
 async def login(
     body: LoginRequest,
+    request: Request,
     response: Response,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AuthResponse:
@@ -69,6 +75,7 @@ async def login(
         session,
         email=body.email,
         password=body.password,
+        ip_address=_client_ip(request),
     )
     _set_refresh_cookie(response, refresh_token)
     return auth_resp
@@ -113,20 +120,23 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     response: Response,
+    session: Annotated[AsyncSession, Depends(get_session)],
     cookie_token: Annotated[str | None, Cookie(alias=_REFRESH_COOKIE)] = None,
     body: LogoutRequest | None = None,
 ) -> None:
     """Invalidate the refresh token and clear the cookie."""
     token = cookie_token or (body.refresh_token if body else None)
     if token:
-        await auth_service.logout(refresh_token=token)
+        await auth_service.logout(session, refresh_token=token, ip_address=_client_ip(request))
     _clear_refresh_cookie(response)
 
 
 @router.post("/invite", status_code=status.HTTP_201_CREATED)
 async def invite(
     body: InviteRequest,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     current_user: Annotated[CurrentUser, Depends(require_role("admin"))],
 ) -> dict:
@@ -137,6 +147,7 @@ async def invite(
         admin_org_id=current_user.org_id,
         email=body.email,
         role=body.role,
+        ip_address=_client_ip(request),
     )
     return {"message": f"Invite sent to {body.email}", "token": token}
 
@@ -155,30 +166,3 @@ async def accept_invite(
     )
     _set_refresh_cookie(response, refresh_token)
     return auth_resp
-
-
-@router.get("/users", response_model=UserListResponse)
-async def list_users(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[CurrentUser, Depends(require_role("admin"))],
-) -> UserListResponse:
-    """Admin: list all members of the current org (10-frontend-spec.md §8)."""
-    return await auth_service.list_users(session, org_id=UUID(current_user.org_id))
-
-
-@router.patch("/users/{user_id}", response_model=UserOut)
-async def update_user(
-    user_id: UUID,
-    body: UserUpdateRequest,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    current_user: Annotated[CurrentUser, Depends(require_role("admin"))],
-) -> UserOut:
-    """Admin: change a member's role and/or activation status."""
-    return await auth_service.update_user(
-        session,
-        admin_user_id=current_user.id,
-        org_id=UUID(current_user.org_id),
-        user_id=user_id,
-        role=body.role,
-        is_active=body.is_active,
-    )

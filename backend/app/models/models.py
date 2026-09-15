@@ -35,6 +35,19 @@ class Organization(BaseModel):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     plan: Mapped[str] = mapped_column(String(50), default="free", nullable=False)
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Data-retention policy (11-security-compliance.md §7): soft-deleted
+    # documents are hard-deleted after this grace period.
+    retention_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    # Audit-log retention (§6): default 2 years, org-configurable.
+    audit_retention_days: Mapped[int] = mapped_column(Integer, default=730, nullable=False)
+    # Preferred LLM provider override (None → server default). One of the
+    # provider names accepted by app.llm.get_llm_provider.
+    llm_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Org deletion (§7): once set, the retention job hard-deletes the org
+    # (full cascade) when the timestamp passes. Cancellable until then.
+    scheduled_deletion_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     users: Mapped[list["User"]] = relationship(
@@ -167,6 +180,12 @@ class Document(BaseModel):
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     language: Mapped[str | None] = mapped_column(String(10), nullable=True)
     file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Soft delete (11-security-compliance.md §7): non-null marks the document
+    # as deleted-with-recovery-window. All normal queries exclude these rows;
+    # the retention job hard-deletes them once the grace period passes.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index("ix_documents_organization_id", "organization_id"),
@@ -174,6 +193,7 @@ class Document(BaseModel):
         Index("ix_documents_status", "status"),
         Index("ix_documents_created_at", "created_at"),
         Index("ix_documents_parent_document_id", "parent_document_id"),
+        Index("ix_documents_deleted_at", "deleted_at"),
     )
 
     # Relationships
@@ -673,3 +693,66 @@ class Report(BaseModel):
 
     # Relationships
     organization: Mapped[Organization] = relationship("Organization", back_populates="reports")
+
+
+class AuditLog(BaseModel):
+    """Append-only audit trail (11-security-compliance.md §6).
+
+    Captures authentication events, document access (view/download/export),
+    risk-status changes, and admin actions with the acting user, org, target
+    resource, and originating IP. Application code only ever INSERTs —
+    updates and deletes are performed exclusively by the retention job
+    (pruning past the org's audit_retention_days).
+    """
+
+    __tablename__ = "audit_logs"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    __table_args__ = (
+        Index("ix_audit_logs_organization_id", "organization_id"),
+        Index("ix_audit_logs_created_at", "created_at"),
+        Index("ix_audit_logs_user_id", "user_id"),
+        Index("ix_audit_logs_action", "action"),
+    )
+
+
+class LLMUsageLog(BaseModel):
+    """Per-call LLM token telemetry, aggregated by /admin/usage (09-api-spec.md §9).
+
+    Written by the AI pipeline (one row per document run) and the Q&A service
+    (one row per answered question).
+    """
+
+    __tablename__ = "llm_usage_logs"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True
+    )
+    # e.g. "ai_pipeline" or "qa"
+    stage: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        Index("ix_llm_usage_logs_organization_id", "organization_id"),
+        Index("ix_llm_usage_logs_created_at", "created_at"),
+    )

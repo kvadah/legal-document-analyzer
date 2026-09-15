@@ -28,9 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.deps import CurrentUser
 from app.db.redis import get_redis
-from app.llm import get_llm_provider
+from app.llm import current_provider_name, get_llm_provider
 from app.llm.prompts import CROSS_DOC_QA_PROMPT, PROMPT_VERSION, QA_PROMPT
-from app.models.models import Chunk, Document, DocumentStatus
+from app.models.models import Chunk, Document, DocumentStatus, LLMUsageLog
 from app.pipelines.ai.extraction import QaAnswerResult
 from app.providers.embeddings import get_embedding_provider
 from app.schemas.search import (
@@ -57,6 +57,32 @@ _MARKER_RE = re.compile(r"\[(\d+)\]")
 
 def _conversation_key(conversation_id: str) -> str:
     return _CONVERSATION_KEY.format(conversation_id=conversation_id)
+
+
+async def _record_llm_usage(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    document_id: UUID | None,
+    result: object,
+) -> None:
+    """Persist token telemetry for one Q&A LLM call (best-effort)."""
+    try:
+        session.add(
+            LLMUsageLog(
+                organization_id=UUID(current_user.org_id),
+                user_id=UUID(current_user.id),
+                document_id=document_id,
+                stage="qa",
+                provider=current_provider_name(),
+                model_version=getattr(result, "model_version", None),
+                input_tokens=getattr(result, "token_usage", {}).get("input", 0),
+                output_tokens=getattr(result, "token_usage", {}).get("output", 0),
+            )
+        )
+        await session.commit()
+    except Exception:
+        logger.warning("qa.usage_log_failed", exc_info=True)
 
 
 def verify_askable(doc_status: str) -> None:
@@ -228,6 +254,9 @@ async def ask(
         prompt_version=PROMPT_VERSION,
     )
     answer = result.typed(QaAnswerResult)
+    await _record_llm_usage(
+        session, current_user=current_user, document_id=document_id, result=result
+    )
 
     text, valid = _validate_citations(answer, chunks_by_id)
     citations = [
@@ -436,6 +465,9 @@ async def ask_all(
         prompt_version=PROMPT_VERSION,
     )
     answer = result.typed(QaAnswerResult)
+    await _record_llm_usage(
+        session, current_user=current_user, document_id=None, result=result
+    )
 
     chunks_by_id = {chunk_id: chunk for chunk_id, (chunk, _doc) in chunk_docs.items()}
     text, valid = _validate_citations(answer, chunks_by_id)

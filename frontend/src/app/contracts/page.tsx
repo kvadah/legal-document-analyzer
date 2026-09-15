@@ -13,9 +13,15 @@ import {
     AlertCircle,
     UploadCloud,
     ChevronRight,
+    Trash2,
 } from 'lucide-react'
 import AppLayout from '@/app/app-layout'
-import { apiListDocuments, type DocumentOut } from '@/lib/api-client'
+import {
+    apiDeleteDocument,
+    apiListDocuments,
+    type DocumentOut,
+} from '@/lib/api-client'
+import { useAuth } from '@/context/AuthContext'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { StatCard } from '@/components/ui/StatCard'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -44,12 +50,16 @@ function TableSkeleton() {
 }
 
 export default function ContractsPage() {
+    const { user } = useAuth()
     const [documents, setDocuments] = useState<DocumentOut[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [query, setQuery] = useState('')
     const [typeFilter, setTypeFilter] = useState('all')
     const [refreshing, setRefreshing] = useState(false)
+    const [deletingId, setDeletingId] = useState<string | null>(null)
+
+    const canDelete = user?.role === 'admin' || user?.role === 'reviewer'
 
     const load = useCallback(async (silent = false) => {
         if (!silent) setRefreshing(true)
@@ -104,6 +114,28 @@ export default function ContractsPage() {
         }),
         [documents],
     )
+
+    // Soft delete: the document lands in the admin trash and stays
+    // recoverable for the org's grace period.
+    const remove = async (doc: DocumentOut) => {
+        if (
+            !window.confirm(
+                `Delete "${doc.filename}"? It will be moved to the trash and recoverable for the grace period.`,
+            )
+        ) {
+            return
+        }
+        setDeletingId(doc.id)
+        setError(null)
+        try {
+            await apiDeleteDocument(doc.id)
+            setDocuments(prev => prev.filter(d => d.id !== doc.id))
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Delete failed')
+        } finally {
+            setDeletingId(null)
+        }
+    }
 
     return (
         <AppLayout>
@@ -245,72 +277,92 @@ export default function ContractsPage() {
 
                         {/* Rows */}
                         <div className="card overflow-hidden">
-                            <div className="hidden grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-4 border-b border-ink-100 bg-ink-50/60 px-6 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-400 md:grid">
+                            <div className="hidden grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto] gap-4 border-b border-ink-100 bg-ink-50/60 px-6 py-3 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-400 md:grid">
                                 <span>Document</span>
                                 <span>Type</span>
                                 <span>Status</span>
                                 <span className="text-right">Uploaded</span>
+                                <span className="w-10" />
                             </div>
                             <ul className="divide-y divide-ink-50">
                                 {filtered.map(doc => {
                                     const type = docTypeMeta(doc.document_type)
                                     return (
                                         <li key={doc.id} className="group">
-                                            <Link
-                                                href={`/documents/${doc.id}`}
-                                                className="grid grid-cols-1 gap-3 px-6 py-4 transition-colors hover:bg-indigo-50/30 md:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center md:gap-4"
-                                            >
-                                                {/* Document */}
-                                                <div className="flex min-w-0 items-center gap-3.5">
-                                                    <span
-                                                        className={cn(
-                                                            'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ring-1 ring-inset',
-                                                            type.tile,
-                                                        )}
-                                                    >
-                                                        {type.glyph}
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <p className="truncate text-[14px] font-semibold text-ink-900 group-hover:text-indigo-700">
-                                                            {doc.filename}
-                                                        </p>
-                                                        <p className="mt-0.5 text-[12px] text-ink-400">
-                                                            {formatBytes(doc.file_size_bytes)}
-                                                            {doc.page_count
-                                                                ? ` · ${doc.page_count} pages`
-                                                                : ''}
-                                                        </p>
+                                            <div className="grid grid-cols-1 gap-3 transition-colors hover:bg-indigo-50/30 md:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-center md:gap-4">
+                                                <Link
+                                                    href={`/documents/${doc.id}`}
+                                                    className="grid min-w-0 grid-cols-1 gap-3 px-6 py-4 md:col-span-4 md:grid-cols-[minmax(0,2.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-center md:gap-4"
+                                                >
+                                                    {/* Document */}
+                                                    <div className="flex min-w-0 items-center gap-3.5">
+                                                        <span
+                                                            className={cn(
+                                                                'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ring-1 ring-inset',
+                                                                type.tile,
+                                                            )}
+                                                        >
+                                                            {type.glyph}
+                                                        </span>
+                                                        <div className="min-w-0">
+                                                            <p className="truncate text-[14px] font-semibold text-ink-900 group-hover:text-indigo-700">
+                                                                {doc.filename}
+                                                            </p>
+                                                            <p className="mt-0.5 text-[12px] text-ink-400">
+                                                                {formatBytes(doc.file_size_bytes)}
+                                                                {doc.page_count
+                                                                    ? ` · ${doc.page_count} pages`
+                                                                    : ''}
+                                                            </p>
+                                                        </div>
                                                     </div>
+                                                    {/* Type */}
+                                                    <div className="flex items-center md:block">
+                                                        <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
+                                                            Type
+                                                        </span>
+                                                        <span className="text-[13px] font-medium text-ink-600">
+                                                            {type.label}
+                                                        </span>
+                                                    </div>
+                                                    {/* Status */}
+                                                    <div className="flex items-center md:block">
+                                                        <span className="mr-2 text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
+                                                            Status
+                                                        </span>
+                                                        <StatusBadge status={doc.status} />
+                                                    </div>
+                                                    {/* Uploaded */}
+                                                    <div className="flex items-center justify-between md:justify-end">
+                                                        <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
+                                                            Uploaded
+                                                        </span>
+                                                        <span
+                                                            className="whitespace-nowrap text-[12.5px] text-ink-400"
+                                                            title={new Date(doc.created_at).toLocaleString()}
+                                                        >
+                                                            {timeAgo(doc.created_at)}
+                                                        </span>
+                                                    </div>
+                                                </Link>
+                                                {/* Row actions */}
+                                                <div className="flex items-center justify-end px-4 pb-3 md:py-0">
+                                                    {canDelete && (
+                                                        <button
+                                                            onClick={() => void remove(doc)}
+                                                            disabled={deletingId === doc.id}
+                                                            title="Delete (moves to trash)"
+                                                            className="btn-ghost px-2.5 py-2 text-ink-400 hover:bg-rose-50 hover:text-rose-600"
+                                                        >
+                                                            {deletingId === doc.id ? (
+                                                                <Loader size={14} className="animate-spin" />
+                                                            ) : (
+                                                                <Trash2 size={14} />
+                                                            )}
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                {/* Type */}
-                                                <div className="flex items-center md:block">
-                                                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
-                                                        Type
-                                                    </span>
-                                                    <span className="text-[13px] font-medium text-ink-600">
-                                                        {type.label}
-                                                    </span>
-                                                </div>
-                                                {/* Status */}
-                                                <div className="flex items-center md:block">
-                                                    <span className="mr-2 text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
-                                                        Status
-                                                    </span>
-                                                    <StatusBadge status={doc.status} />
-                                                </div>
-                                                {/* Uploaded */}
-                                                <div className="flex items-center justify-between md:justify-end">
-                                                    <span className="text-[11px] font-bold uppercase tracking-wider text-ink-300 md:hidden">
-                                                        Uploaded
-                                                    </span>
-                                                    <span
-                                                        className="whitespace-nowrap text-[12.5px] text-ink-400"
-                                                        title={new Date(doc.created_at).toLocaleString()}
-                                                    >
-                                                        {timeAgo(doc.created_at)}
-                                                    </span>
-                                                </div>
-                                            </Link>
+                                            </div>
                                         </li>
                                     )
                                 })}

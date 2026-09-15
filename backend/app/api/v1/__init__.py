@@ -1,6 +1,7 @@
 """API v1 router."""
 from fastapi import APIRouter
 
+from app.api.v1.admin import router as admin_router
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.collaboration import router as collaboration_router
@@ -21,3 +22,4 @@ v1_router.include_router(compare_router)
 v1_router.include_router(relationships_router)
 v1_router.include_router(reports_router)
 v1_router.include_router(collaboration_router)
+v1_router.include_router(admin_router)

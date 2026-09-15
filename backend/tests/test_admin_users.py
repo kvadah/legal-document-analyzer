@@ -1,4 +1,5 @@
-"""Admin user-management tests — GET/PATCH /auth/users (10-frontend-spec.md §8)."""
+"""Admin user-management tests — GET/PATCH/DELETE /admin/users
+(09-api-spec.md §9, 10-frontend-spec.md §8)."""
 import pytest
 from app.models.models import User
 from sqlalchemy import select
@@ -33,7 +34,7 @@ async def test_admin_can_list_org_users(client):
     await _invite_and_accept(client, admin_token, "member@example.com", "reviewer")
 
     resp = await client.get(
-        "/api/v1/auth/users",
+        "/api/v1/admin/users",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 200, resp.text
@@ -54,7 +55,7 @@ async def test_non_admin_cannot_list_users(client):
     viewer_token = viewer["access_token"]
 
     resp = await client.get(
-        "/api/v1/auth/users",
+        "/api/v1/admin/users",
         headers={"Authorization": f"Bearer {viewer_token}"},
     )
     assert resp.status_code == 403
@@ -68,7 +69,7 @@ async def test_admin_can_change_role_and_deactivate(client, db_session):
     user_id = await _get_user_id(db_session, "member4@example.com")
 
     resp = await client.patch(
-        f"/api/v1/auth/users/{user_id}",
+        f"/api/v1/admin/users/{user_id}",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"role": "reviewer"},
     )
@@ -77,7 +78,7 @@ async def test_admin_can_change_role_and_deactivate(client, db_session):
 
     # Deactivate — the member can no longer log in.
     resp = await client.patch(
-        f"/api/v1/auth/users/{user_id}",
+        f"/api/v1/admin/users/{user_id}",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"is_active": False},
     )
@@ -92,7 +93,7 @@ async def test_admin_can_change_role_and_deactivate(client, db_session):
 
     # Reactivate works too.
     resp = await client.patch(
-        f"/api/v1/auth/users/{user_id}",
+        f"/api/v1/admin/users/{user_id}",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"is_active": True},
     )
@@ -107,7 +108,7 @@ async def test_admin_cannot_modify_self(client):
     admin_id = reg.json()["user"]["id"]
 
     resp = await client.patch(
-        f"/api/v1/auth/users/{admin_id}",
+        f"/api/v1/admin/users/{admin_id}",
         headers={"Authorization": f"Bearer {admin_token}"},
         json={"role": "viewer"},
     )
@@ -128,7 +129,7 @@ async def test_admin_cannot_modify_other_org_user(client, db_session):
     user_b_id = reg_b.json()["user"]["id"]
 
     resp = await client.patch(
-        f"/api/v1/auth/users/{user_b_id}",
+        f"/api/v1/admin/users/{user_b_id}",
         headers={"Authorization": f"Bearer {token_a}"},
         json={"role": "viewer"},
     )
@@ -136,7 +137,7 @@ async def test_admin_cannot_modify_other_org_user(client, db_session):
 
     # Org A's user list never contains org B's users.
     listing = await client.get(
-        "/api/v1/auth/users",
+        "/api/v1/admin/users",
         headers={"Authorization": f"Bearer {token_a}"},
     )
     emails = {u["email"] for u in listing.json()["items"]}
@@ -144,7 +145,7 @@ async def test_admin_cannot_modify_other_org_user(client, db_session):
     # token_b still works (no accidental modification)
     assert (
         await client.get(
-            "/api/v1/auth/users",
+            "/api/v1/admin/users",
             headers={"Authorization": f"Bearer {token_b}"},
         )
     ).status_code == 200
@@ -158,7 +159,7 @@ async def test_update_user_requires_admin(client):
     viewer_token = viewer["access_token"]
 
     resp = await client.patch(
-        "/api/v1/auth/users/00000000-0000-0000-0000-000000000000",
+        "/api/v1/admin/users/00000000-0000-0000-0000-000000000000",
         headers={"Authorization": f"Bearer {viewer_token}"},
         json={"role": "admin"},
     )

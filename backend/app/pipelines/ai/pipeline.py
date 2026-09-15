@@ -28,9 +28,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
+
 from app.db.session import AsyncSessionLocal
-from app.llm import get_llm_provider
-from app.llm.base import LLMProvider
+from app.llm import current_provider_name, get_llm_provider
+from app.llm.base import LLMProvider, ModelTier, StructuredResult
 from app.llm.prompts import (
     ENTITY_PROMPT,
     METADATA_PROMPT,
@@ -53,6 +55,7 @@ from app.models.models import (
     DocumentType,
     Entity,
     EntityType,
+    LLMUsageLog,
     Obligation,
     Risk,
     RiskSeverity,
@@ -90,6 +93,35 @@ _LLM_JUDGMENT_TYPES = (
 
 _MAX_ENTITY_CONTEXT_CHUNKS = 30
 _PREAMBLE_TAIL_CHUNKS = 3
+
+
+class _UsageTracker:
+    """Wrap a provider, accumulating token telemetry across calls
+    (written as one LLMUsageLog row per document run)."""
+
+    def __init__(self, provider: LLMProvider) -> None:
+        self._provider = provider
+        self.calls = 0
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.model_version: str | None = None
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        context: list[str],
+        model_tier: ModelTier,
+        prompt_version: str = "unversioned",
+    ) -> StructuredResult:
+        result = await self._provider.generate_structured(
+            prompt, schema, context, model_tier, prompt_version
+        )
+        self.calls += 1
+        self.input_tokens += result.token_usage.get("input", 0)
+        self.output_tokens += result.token_usage.get("output", 0)
+        self.model_version = result.model_version
+        return result
 
 
 async def run_ai_pipeline(document_id: str) -> None:
@@ -135,7 +167,15 @@ async def _run_stages(session: AsyncSession, doc: Document) -> None:
     )
 
     chunks = await ChunkRepository(session).list_for_document(doc_id)
-    provider = get_llm_provider()
+
+    # Org-level provider preference (09-api-spec.md §9), server default
+    # otherwise.
+    from app.repositories.org_repo import OrgRepository
+
+    org = await OrgRepository(session).get_by_id(org_id)
+    preferred = org.llm_provider if org else None
+    tracker = _UsageTracker(get_llm_provider(preferred))
+    provider: LLMProvider = tracker
 
     metadata = await _extract_metadata(provider, chunks)
     clauses = await _detect_clauses(provider, chunks)
@@ -163,6 +203,21 @@ async def _run_stages(session: AsyncSession, doc: Document) -> None:
         contract_score=contract_score,
         ai_confidence=ai_confidence,
     )
+
+    if tracker.calls:
+        session.add(
+            LLMUsageLog(
+                organization_id=org_id,
+                user_id=doc.uploaded_by,
+                document_id=doc_id,
+                stage="ai_pipeline",
+                provider=current_provider_name(preferred),
+                model_version=tracker.model_version,
+                input_tokens=tracker.input_tokens,
+                output_tokens=tracker.output_tokens,
+            )
+        )
+        await session.commit()
 
     await transition_document_status(
         session,

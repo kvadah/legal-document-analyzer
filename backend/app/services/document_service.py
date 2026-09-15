@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import uuid
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
@@ -15,6 +16,7 @@ from app.core.deps import CurrentUser
 from app.models.models import Document, DocumentStatus, DocumentVersion
 from app.repositories.chunk_repo import ChunkRepository
 from app.repositories.document_repo import DocumentRepository
+from app.repositories.org_repo import OrgRepository
 from app.schemas.document import (
     DocumentOut,
     DocumentPage,
@@ -24,6 +26,7 @@ from app.schemas.document import (
     PageBlock,
     UploadDocumentResult,
 )
+from app.services import audit_service
 from app.services.storage_service import build_document_storage_key, get_storage
 from app.workers.pool import enqueue_ingestion
 
@@ -45,7 +48,12 @@ ALLOWED_MIME_TYPES = {
 }
 
 
-def _document_to_out(doc: Document, *, possible_duplicate_of: str | None = None) -> DocumentOut:
+def _document_to_out(
+    doc: Document,
+    *,
+    possible_duplicate_of: str | None = None,
+    retention_days: int | None = None,
+) -> DocumentOut:
     return DocumentOut(
         id=str(doc.id),
         filename=doc.filename,
@@ -65,6 +73,12 @@ def _document_to_out(doc: Document, *, possible_duplicate_of: str | None = None)
             float(doc.ai_confidence_score) if doc.ai_confidence_score is not None else None
         ),
         parent_document_id=str(doc.parent_document_id) if doc.parent_document_id else None,
+        deleted_at=doc.deleted_at,
+        purges_at=(
+            doc.deleted_at + timedelta(days=retention_days)
+            if doc.deleted_at is not None and retention_days is not None
+            else None
+        ),
         created_at=doc.created_at,
         updated_at=doc.updated_at,
     )
@@ -166,6 +180,15 @@ async def upload_documents(
             storage_path=storage_key,
             file_hash=file_hash,
             document_id=document_id,
+        )
+        await audit_service.record(
+            session,
+            organization_id=org_id,
+            user_id=user_id,
+            action=audit_service.AuditAction.DOCUMENT_UPLOADED,
+            resource_type="document",
+            resource_id=doc.id,
+            details={"filename": filename, "file_type": file_type},
         )
 
         await session.commit()
@@ -289,6 +312,15 @@ async def upload_document_version(
             change_note=change_note,
         )
     )
+    await audit_service.record(
+        session,
+        organization_id=org_id,
+        user_id=user_id,
+        action=audit_service.AuditAction.DOCUMENT_UPLOADED,
+        resource_type="document",
+        resource_id=doc.id,
+        details={"filename": filename, "version_of": str(root_id)},
+    )
     await session.commit()
     await enqueue_ingestion(str(doc.id))
     return UploadDocumentResult(
@@ -403,3 +435,49 @@ async def list_documents(
 
     items, total = await repo.list(limit=limit, offset=offset, extra_filters=filters)
     return [_document_to_out(doc) for doc in items], total
+
+
+async def soft_delete_document(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    document_id: UUID,
+) -> DocumentOut:
+    """Soft-delete a document (11-security-compliance.md §7).
+
+    The row stays recoverable until the retention job hard-deletes it after
+    the org's grace period; all normal queries immediately exclude it.
+    """
+    repo = DocumentRepository(session, UUID(current_user.org_id))
+    doc = await repo.soft_delete(document_id)
+    await session.commit()
+    return _document_to_out(doc)
+
+
+async def restore_document(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    document_id: UUID,
+) -> DocumentOut:
+    """Restore a soft-deleted document within the grace period (admin only)."""
+    repo = DocumentRepository(session, UUID(current_user.org_id))
+    doc = await repo.restore(document_id)
+    await session.commit()
+    return _document_to_out(doc)
+
+
+async def list_deleted_documents(
+    session: AsyncSession,
+    *,
+    current_user: CurrentUser,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[DocumentOut], int]:
+    """List soft-deleted documents (admin trash view) with their purge dates."""
+    org_id = UUID(current_user.org_id)
+    org = await OrgRepository(session).get_by_id(org_id)
+    retention_days = org.retention_days if org else 30
+    repo = DocumentRepository(session, org_id)
+    items, total = await repo.list(limit=limit, offset=offset, deleted_only=True)
+    return [_document_to_out(doc, retention_days=retention_days) for doc in items], total

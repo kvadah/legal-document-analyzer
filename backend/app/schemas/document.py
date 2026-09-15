@@ -21,6 +21,8 @@ class DocumentOut(BaseModel):
     contract_score: float | None = None
     ai_confidence_score: float | None = None
     parent_document_id: str | None = None
+    deleted_at: datetime | None = None
+    purges_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
